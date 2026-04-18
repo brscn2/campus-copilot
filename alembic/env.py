@@ -1,12 +1,13 @@
 """Alembic env — async migration runner."""
+
 from __future__ import annotations
 
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from alembic import context
 from src.config import get_settings
 from src.storage.schema import Base
 
