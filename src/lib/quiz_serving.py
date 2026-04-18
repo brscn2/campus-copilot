@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import random
+import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -15,9 +16,6 @@ import structlog
 from sqlalchemy import select
 
 from src.exceptions import QuizNotFoundError
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 from src.lib.content_generator import _safe_filename
 from src.lib.mastery import (
     average_flashcard_rating,
@@ -45,7 +43,20 @@ from src.storage.schema import (
     StudentConceptProgressRow,
 )
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 logger = structlog.get_logger(__name__)
+
+
+def _is_valid_uuid(value: str) -> bool:
+    """Check if a string is a valid UUID (for DB FK lookups)."""
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
 
 # ============================================================================
 # S3 Helpers (Private)
@@ -148,6 +159,9 @@ async def _get_seen_question_ids(
     Returns:
         Set of question IDs the student has already attempted.
     """
+    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
+        return set()
+
     result = await session.execute(
         select(QuizAttemptRow.question_ids).where(
             QuizAttemptRow.student_id == student_id,
@@ -178,6 +192,9 @@ async def _get_seen_card_ids(
     Returns:
         Set of card IDs the student has already reviewed.
     """
+    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
+        return set()
+
     result = await session.execute(
         select(FlashcardAttemptRow.card_ratings).where(
             FlashcardAttemptRow.student_id == student_id,
@@ -215,8 +232,9 @@ async def _pick_weakest_concepts(
     if not available:
         return []
 
-    # Get mastery scores for all available concepts
-    # Note: available concepts are safe filenames, need to match them
+    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
+        return available[:limit]
+
     result = await session.execute(
         select(StudentConceptProgressRow).where(
             StudentConceptProgressRow.student_id == student_id,
