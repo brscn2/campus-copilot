@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
+    google_calendar_mode: Literal["mock", "live"] = "mock"
 
     # S3
     s3_bucket: str = "campus-copilot-demo"

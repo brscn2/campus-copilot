@@ -62,12 +62,29 @@ async def book_room(
         end: ISO datetime for booking end.
         student_id: The student making the booking.
     """
-    return await _book_room(
+    from datetime import datetime
+
+    result = await _book_room(
         room_id=room_id,
         start=start,
         end=end,
         student_id=student_id,
     )
+
+    from src.cal.orchestrator import register_booking
+
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    booking = await register_booking(
+        student_id=student_id,
+        kind="study_room",
+        title=f"Study room: {room_id}",
+        starts_at=start_dt,
+        ends_at=end_dt,
+        location=room_id,
+        agent="academic",
+    )
+    return {**result, "calendar": booking}
 
 
 @tool

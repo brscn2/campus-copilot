@@ -70,6 +70,10 @@ class CalendarError(CampusCopilotError):
     """Base for calendar-related failures."""
 
 
+class CalendarNotConnectedError(CalendarError):
+    """Student hasn't connected Google Calendar yet."""
+
+
 class CalendarConflictError(CalendarError):
     """Proposed booking conflicts with an existing event."""
 
