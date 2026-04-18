@@ -11,7 +11,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from src.exceptions import TUMSystemUnavailableError
+from src.exceptions import JobSearchError, TUMSystemUnavailableError
 
 
 def retry_external(
@@ -20,9 +20,11 @@ def retry_external(
     min_wait: float = 0.5,
     max_wait: float = 10.0,
 ) -> Any:
-    """Retry decorator for external TUM system calls with exponential backoff + jitter."""
+    """Retry decorator for external system calls with exponential backoff + jitter."""
     return retry(
-        retry=retry_if_exception_type((TUMSystemUnavailableError, ConnectionError, TimeoutError)),
+        retry=retry_if_exception_type(
+            (TUMSystemUnavailableError, ConnectionError, TimeoutError, JobSearchError)
+        ),
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential_jitter(initial=min_wait, max=max_wait),
         reraise=True,

@@ -660,6 +660,245 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   )
 }
 
+function CourseDetailDialog({ course, onClose }: { course: Course | null; onClose: () => void }) {
+  const [quizOpen, setQuizOpen] = React.useState(false)
+  const [reviewed, setReviewed] = React.useState<Record<number, boolean>>({})
+  const [files, setFiles] = React.useState<CourseFile[]>([])
+  const [filesLoading, setFilesLoading] = React.useState(false)
+
+  const datasetName = course ? course.code.toLowerCase().replace(/[^a-z0-9]/g, "") : ""
+
+  React.useEffect(() => {
+    if (course) {
+      const init: Record<number, boolean> = {}
+      course.lectures.forEach((l) => (init[l.id] = l.reviewed))
+      setReviewed(init)
+
+      setFilesLoading(true)
+      listCourseFiles(datasetName)
+        .then((res) => setFiles(res.files))
+        .catch(() => setFiles([]))
+        .finally(() => setFilesLoading(false))
+    } else {
+      setFiles([])
+    }
+  }, [course])
+
+  return (
+    <>
+      <Dialog open={!!course} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-2xl">
+          {course ? (
+            <>
+              <DialogHeader>
+                <div className="font-mono text-xs text-primary">{course.code}</div>
+                <DialogTitle className="text-xl">{course.name}</DialogTitle>
+                <DialogDescription>
+                  {course.professor} · {course.chair} · {course.credits} ECTS
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Mastery</div>
+                  <div className="text-lg font-semibold tabular-nums">{course.mastery}%</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    Flashcards (28)
+                  </Button>
+                  <Button size="sm" className="gap-1.5" onClick={() => setQuizOpen(true)}>
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Generate quiz
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-medium">Slide summaries</div>
+                <Accordion type="single" collapsible className="w-full">
+                  {course.lectures.map((l) => (
+                    <AccordionItem key={l.id} value={`l-${l.id}`}>
+                      <div className="flex items-center gap-3">
+                        <AccordionTrigger className="flex-1 gap-3">
+                          <span className="text-left text-sm font-medium">{l.title}</span>
+                        </AccordionTrigger>
+                        <div
+                          className="flex items-center gap-2 pr-3 text-xs text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span>Reviewed</span>
+                          <Switch
+                            checked={!!reviewed[l.id]}
+                            onCheckedChange={(v) =>
+                              setReviewed((prev) => ({ ...prev, [l.id]: v }))
+                            }
+                            aria-label={`Mark ${l.title} reviewed`}
+                          />
+                        </div>
+                      </div>
+                      <AccordionContent className="text-sm text-muted-foreground">
+                        {l.summary}
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </div>
+
+              {files.length > 0 && (
+                <div>
+                  <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
+                  <div className="flex flex-col gap-1.5">
+                    {files.map((f) => {
+                      const filename = f.key.split("/").pop() ?? f.key
+                      return (
+                        <div
+                          key={f.key}
+                          className="flex items-center justify-between rounded-lg border border-border p-2.5"
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span>{filename}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({(f.size / 1024).toFixed(0)} KB)
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5"
+                            onClick={async () => {
+                              const res = await getFileUrl(datasetName, filename)
+                              window.open(res.url, "_blank")
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {filesLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading files…
+                </div>
+              )}
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <QuizDialog open={quizOpen} onClose={() => setQuizOpen(false)} course={course} />
+    </>
+  )
+}
+
+const sampleQuiz = [
+  {
+    q: "What is the average time complexity of hash table lookup with chaining under a good hash function?",
+    options: ["O(log n)", "O(1)", "O(n)", "O(n log n)"],
+    correct: 1,
+  },
+  {
+    q: "Which sorting algorithm has worst-case O(n log n) and is in-place?",
+    options: ["Merge sort", "Quicksort", "Heapsort", "Insertion sort"],
+    correct: 2,
+  },
+  {
+    q: "In BFS on an unweighted graph, the first time a node is dequeued…",
+    options: [
+      "…we know the shortest path length",
+      "…it may still change later",
+      "…depends on the start node only",
+      "…only if the graph is a tree",
+    ],
+    correct: 0,
+  },
+]
+
+function QuizDialog({ open, onClose, course }: { open: boolean; onClose: () => void; course: Course | null }) {
+  const [answers, setAnswers] = React.useState<Record<number, number>>({})
+  const [submitted, setSubmitted] = React.useState(false)
+
+  React.useEffect(() => {
+    if (open) {
+      setAnswers({})
+      setSubmitted(false)
+    }
+  }, [open])
+
+  const score = Object.entries(answers).filter(([i, v]) => sampleQuiz[Number(i)].correct === v).length
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Quiz · {course?.code}
+          </DialogTitle>
+          <DialogDescription>Auto-generated from your unreviewed lectures.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-5">
+          {sampleQuiz.map((item, i) => (
+            <div key={i}>
+              <div className="mb-2 text-sm font-medium">
+                {i + 1}. {item.q}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {item.options.map((opt, oi) => {
+                  const picked = answers[i] === oi
+                  const correct = submitted && item.correct === oi
+                  const wrong = submitted && picked && item.correct !== oi
+                  return (
+                    <label
+                      key={oi}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2 rounded-lg border border-border p-2.5 text-sm transition-colors",
+                        picked && !submitted && "border-primary bg-primary/5",
+                        correct && "border-career bg-career-soft",
+                        wrong && "border-destructive bg-destructive/10",
+                      )}
+                    >
+                      <input
+                        type="radio"
+                        name={`q-${i}`}
+                        className="accent-primary"
+                        checked={picked}
+                        onChange={() => setAnswers((a) => ({ ...a, [i]: oi }))}
+                        disabled={submitted}
+                      />
+                      {opt}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            {submitted ? `Score: ${score} / ${sampleQuiz.length}` : `${Object.keys(answers).length} / ${sampleQuiz.length} answered`}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Close
+            </Button>
+            <Button onClick={() => setSubmitted(true)} disabled={submitted}>
+              Submit
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ContentConfigDialog({
   open,
   onClose,
