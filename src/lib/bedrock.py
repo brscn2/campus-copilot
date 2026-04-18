@@ -97,18 +97,20 @@ def get_chat_model(
     """Return a LangChain ChatBedrock instance for use with LangGraph.
 
     Args:
-        model: One of 'sonnet', 'haiku'.
+        model: Model name (currently only 'sonnet' is available).
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
     """
     from langchain_aws import ChatBedrock
 
     settings = get_settings()
-    model_id = get_sonnet_model_id() if model == "sonnet" else get_haiku_model_id()
+    model_id = get_sonnet_model_id()
 
     return ChatBedrock(
         model_id=model_id,
         region_name=settings.bedrock_region,
         credentials_profile_name=None,
+        aws_access_key_id=settings.aws_access_key_id,
+        aws_secret_access_key=settings.aws_secret_access_key,
         model_kwargs={"temperature": temperature, "max_tokens": max_tokens},
     )
