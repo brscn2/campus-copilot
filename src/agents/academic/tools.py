@@ -136,6 +136,9 @@ async def take_quiz(
         "core_concept": core_concept,
         "questions": served,
         "total_available": len(questions),
+    }
+
+
 async def search_thesis_opportunities(
     keywords: list[str] | None = None,
     chair: str | None = None,

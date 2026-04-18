@@ -1,10 +1,11 @@
-"""Cognee Cloud memory layer — search and retrieval via cogwit-sdk."""
+"""Cognee Cloud memory layer — cogwit SDK for course queries, HTTP for student memory."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
+import httpx
 import structlog
 
 from src.config import get_settings
@@ -197,8 +198,6 @@ async def add_to_memory(
     settings = get_settings()
     logger.info("memory_add", user_id=user_id, content_length=len(content))
 
-    import httpx
-
     url = f"{settings.cognee_api_url}/api/v1/add"
     headers = {"X-Api-Key": settings.cognee_api_key}
     payload = {
@@ -221,6 +220,9 @@ async def query_memory(
 ) -> list[dict[str, Any]]:
     """Query the knowledge graph for relevant student context.
 
+    Uses the HTTP API with dataset scoping so results are isolated to this
+    student's memory, not the entire tenant.
+
     Args:
         user_id: Student identifier for namespace isolation.
         query: Natural language query.
@@ -229,10 +231,31 @@ async def query_memory(
     Returns:
         List of matching documents with content and metadata.
     """
-    logger.info("memory_query", user_id=user_id, query=query, top_k=top_k)
+    settings = get_settings()
+    dataset = f"student_{user_id}"
+    logger.info("memory_query", user_id=user_id, query=query, dataset=dataset, top_k=top_k)
     try:
-        results = await _search(query)
-        return [{"content": r, "source": "cognee"} for r in results[:top_k]]
-    except CogneeRetrievalError:
-        logger.warning("memory_query_fallback", user_id=user_id)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{settings.cognee_api_url}/api/v1/search",
+                json={
+                    "query": query,
+                    "search_type": "GRAPH_COMPLETION",
+                    "datasets": [dataset],
+                },
+                headers={"X-Api-Key": settings.cognee_api_key},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        texts: list[str] = []
+        if isinstance(data, list):
+            for item in data:
+                text = str(item.get("search_result", item)) if isinstance(item, dict) else str(item)
+                if len(text) > 10:
+                    texts.append(text)
+
+        return [{"content": r, "source": "cognee"} for r in texts[:top_k]]
+    except Exception:
+        logger.warning("memory_query_failed", user_id=user_id, exc_info=True)
         return []
