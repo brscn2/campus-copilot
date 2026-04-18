@@ -51,8 +51,57 @@ export interface SyncedCourse {
   s3_prefix: string
 }
 
-export function listSyncedCourses(): Promise<{ courses: SyncedCourse[] }> {
-  return request("/api/pipeline/synced")
+export function listSyncedCourses(studentId: string = "demo"): Promise<{ courses: SyncedCourse[] }> {
+  return request(`/api/pipeline/synced?student_id=${encodeURIComponent(studentId)}`)
+}
+
+// --- Course metadata overrides (semester re-categorisation) ---
+//
+// Backed by the `students.course_overrides` JSONB column.  These keep the
+// stable Cognee `dataset_name` untouched so quizzes / flashcards / S3 keys all
+// continue to work — only the displayed semester bucket changes.
+
+export type CourseOverrides = Record<string, { semester?: string }>
+
+export function listCourseOverrides(
+  studentId: string = "demo",
+): Promise<{ overrides: CourseOverrides }> {
+  return request(
+    `/api/pipeline/synced/overrides?student_id=${encodeURIComponent(studentId)}`,
+  )
+}
+
+export function setCourseSemesterOverride(
+  datasetName: string,
+  semester: string,
+  studentId: string = "demo",
+): Promise<{ overrides: CourseOverrides }> {
+  return request(
+    `/api/pipeline/synced/overrides/${encodeURIComponent(datasetName)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ student_id: studentId, semester }),
+    },
+  )
+}
+
+export function deleteCourseOverride(
+  datasetName: string,
+  studentId: string = "demo",
+): Promise<{ overrides: CourseOverrides }> {
+  return request(
+    `/api/pipeline/synced/overrides/${encodeURIComponent(datasetName)}?student_id=${encodeURIComponent(studentId)}`,
+    { method: "DELETE" },
+  )
+}
+
+export function clearCourseOverrides(
+  studentId: string = "demo",
+): Promise<{ overrides: CourseOverrides }> {
+  return request(
+    `/api/pipeline/synced/overrides?student_id=${encodeURIComponent(studentId)}`,
+    { method: "DELETE" },
+  )
 }
 
 // --- Cognify ---

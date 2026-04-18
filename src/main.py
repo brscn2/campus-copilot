@@ -133,8 +133,6 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(quiz_router, prefix="/api")
     application.include_router(auth_router, prefix="/api")
     application.include_router(calendar_router, prefix="/api")
-    application.include_router(cognify_router)
-    application.include_router(pipeline_router)
 
 
 app = create_app()
