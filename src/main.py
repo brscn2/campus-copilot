@@ -111,6 +111,7 @@ def _register_routes(application: FastAPI) -> None:
     from src.api.cognify import router as cognify_router
     from src.api.health import router as health_router
     from src.api.pipeline import router as pipeline_router
+    from src.api.quiz import router as quiz_router
     from src.api.social import router as social_router
 
     application.include_router(health_router)
@@ -120,6 +121,7 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(social_router, prefix="/api")
     application.include_router(cognify_router)
     application.include_router(pipeline_router)
+    application.include_router(quiz_router, prefix="/api")
 
 
 app = create_app()
