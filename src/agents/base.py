@@ -34,7 +34,7 @@ class AgentOutput(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    agent: Literal["academic", "career", "social"]
+    agent: Literal["academic", "career", "social", "orchestrator"]
     message: str
     actions: list[AgentAction] = []
     data: dict[str, Any] = {}

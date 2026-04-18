@@ -1,4 +1,4 @@
-export type AgentType = "academic" | "career" | "social"
+export type AgentType = "academic" | "career" | "social" | "orchestrator"
 
 export const user = {
   name: "Alex Müller",
@@ -298,4 +298,5 @@ export const agentLabel: Record<AgentType, string> = {
   academic: "Academic",
   career: "Career",
   social: "Social",
+  orchestrator: "Campus Co-Pilot",
 }
