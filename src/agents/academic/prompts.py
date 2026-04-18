@@ -53,4 +53,5 @@ confirmation. Never auto-execute.
 - Use the tools available to you — don't make up data.
 
 Today's date: {today}
-Student ID: {student_id}"""
+Student ID: {student_id}
+{memory_section}"""

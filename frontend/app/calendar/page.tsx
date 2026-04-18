@@ -33,6 +33,7 @@ const agentBg: Record<AgentType, string> = {
   academic: "bg-academic-soft border-academic/30 text-academic",
   career: "bg-career-soft border-career/30 text-career",
   social: "bg-social-soft border-social/40 text-social-foreground",
+  orchestrator: "bg-primary/10 border-primary/30 text-primary",
 }
 
 export default function CalendarPage() {

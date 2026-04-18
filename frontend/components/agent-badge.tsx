@@ -6,12 +6,14 @@ const styles: Record<AgentType, string> = {
   academic: "bg-academic-soft text-academic border-academic/20",
   career: "bg-career-soft text-career border-career/20",
   social: "bg-social-soft text-social-foreground border-social/30",
+  orchestrator: "bg-primary/10 text-primary border-primary/20",
 }
 
 const dots: Record<AgentType, string> = {
   academic: "bg-academic",
   career: "bg-career",
   social: "bg-social",
+  orchestrator: "bg-primary",
 }
 
 export function AgentBadge({
@@ -48,6 +50,7 @@ export function agentBorder(agent: AgentType) {
     academic: "border-l-academic",
     career: "border-l-career",
     social: "border-l-social",
+    orchestrator: "border-l-primary",
   }
   return map[agent]
 }

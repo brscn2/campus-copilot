@@ -10,6 +10,11 @@ import structlog
 from src.config import get_settings
 from src.exceptions import CogneeRetrievalError
 
+# cogwit_sdk reads COGWIT_API_BASE at import time — set before importing
+_boot_settings = get_settings()
+if _boot_settings.cognee_api_url:
+    os.environ["COGWIT_API_BASE"] = _boot_settings.cognee_api_url
+
 logger = structlog.get_logger(__name__)
 
 _client: Any = None
@@ -214,7 +219,7 @@ async def query_memory(
     *,
     user_id: str,
     query: str,
-    top_k: int = 5,
+    top_k: int = 3,
 ) -> list[dict[str, Any]]:
     """Query the knowledge graph for relevant student context.
 
