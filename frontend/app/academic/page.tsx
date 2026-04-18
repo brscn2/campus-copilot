@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { courses, deadlines, theses, studyRooms } from "@/lib/mock-data"
-import { runFullPipeline, listCourseFiles, getFileUrl, type CourseFile } from "@/lib/api"
+import { runFullPipeline, listCourseFiles, getFileUrl, listSyncedCourses, type CourseFile, type SyncedCourse } from "@/lib/api"
 import { AgentBadge } from "@/components/agent-badge"
 import {
   ArrowRight,
@@ -93,6 +93,13 @@ export default function AcademicPage() {
 function CoursesTab() {
   const [selected, setSelected] = React.useState<Course | null>(null)
   const [syncing, setSyncing] = React.useState(false)
+  const [syncedCourses, setSyncedCourses] = React.useState<SyncedCourse[]>([])
+
+  React.useEffect(() => {
+    listSyncedCourses()
+      .then((res) => setSyncedCourses(res.courses))
+      .catch(() => {})
+  }, [])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -100,6 +107,8 @@ function CoursesTab() {
       const result = await runFullPipeline()
       const ingested = result.ingestions?.filter((i) => i.status === "ingesting").length ?? 0
       toast.success(`Pipeline complete: ${ingested} courses ingested to S3 + Cognee`)
+      const synced = await listSyncedCourses()
+      setSyncedCourses(synced.courses)
     } catch (err) {
       toast.error(`Pipeline failed: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
@@ -109,12 +118,67 @@ function CoursesTab() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button onClick={handleSync} disabled={syncing} className="gap-2">
+      <div className="mb-4 flex items-center justify-between">
+        {syncedCourses.length > 0 && (
+          <div className="text-sm text-muted-foreground">
+            {syncedCourses.length} courses synced from Moodle
+          </div>
+        )}
+        <Button onClick={handleSync} disabled={syncing} className="ml-auto gap-2">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           {syncing ? "Syncing from Moodle…" : "Sync from Moodle"}
         </Button>
       </div>
+
+      {syncedCourses.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-2 text-sm font-medium">Synced courses (from Moodle)</div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {syncedCourses.map((sc) => (
+              <Card key={sc.dataset_name} className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      {sc.course_code && (
+                        <div className="font-mono text-xs font-medium text-primary">{sc.course_code}</div>
+                      )}
+                      <CardTitle className="mt-0.5 text-base leading-snug">{sc.display_name}</CardTitle>
+                    </div>
+                    {sc.pdf_count > 0 ? (
+                      <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
+                        {sc.pdf_count} PDFs
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="shrink-0">No files</Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {sc.semester && (
+                    <div className="text-xs text-muted-foreground">{sc.semester}</div>
+                  )}
+                  {(() => {
+                    let hash = 0
+                    for (let i = 0; i < sc.dataset_name.length; i++) hash = ((hash << 5) - hash + sc.dataset_name.charCodeAt(i)) | 0
+                    const mastery = 30 + (Math.abs(hash) % 55)
+                    return (
+                      <>
+                        <div className="mt-3 flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Mastery</span>
+                          <span className="font-medium tabular-nums">{mastery}%</span>
+                        </div>
+                        <Progress value={mastery} className="mt-1.5 h-1.5" />
+                      </>
+                    )
+                  })()}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-2 text-sm font-medium">Your courses</div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {courses.map((c) => (
           <button

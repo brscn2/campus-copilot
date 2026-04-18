@@ -40,6 +40,21 @@ export function getFileUrl(courseId: string, filename: string): Promise<{ url: s
   return request(`/api/pipeline/files/${encodeURIComponent(courseId)}/${encodeURIComponent(filename)}/url`)
 }
 
+// --- Synced courses ---
+
+export interface SyncedCourse {
+  dataset_name: string
+  display_name: string
+  course_code: string
+  semester: string
+  pdf_count: number
+  s3_prefix: string
+}
+
+export function listSyncedCourses(): Promise<{ courses: SyncedCourse[] }> {
+  return request("/api/pipeline/synced")
+}
+
 // --- Cognify ---
 
 export interface CognifyResult {
