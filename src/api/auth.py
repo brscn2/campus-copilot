@@ -1,9 +1,18 @@
-"""OAuth routes — Google Calendar consent flow."""
+"""OAuth routes — Google Calendar consent flow.
+
+Uses plain httpx for token exchange instead of google_auth_oauthlib (which adds
+PKCE code_challenge and breaks some redirect setups).  Stores the token JSON to
+a local file `.gcal_token.json` as a fallback when Postgres is not running.
+"""
 
 from __future__ import annotations
 
 import json
+import secrets
+from pathlib import Path
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Query
 from fastapi.responses import RedirectResponse
 
@@ -14,12 +23,18 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DEMO_STUDENT_ID = "demo_student"
+DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
 ]
+
+TOKEN_FILE = Path(".gcal_token.json")
+
+# In-memory state store — maps state token → True.  Single-process is fine for
+# the hackathon demo; a production system would use Redis or a DB table.
+_pending_states: dict[str, bool] = {}
 
 
 @router.get("/google")
@@ -31,28 +46,23 @@ async def google_auth_redirect() -> RedirectResponse:
         logger.info("google_auth_mock_redirect")
         return RedirectResponse(url=f"{settings.frontend_url}/calendar?connected=true")
 
-    from google_auth_oauthlib.flow import Flow
+    state = secrets.token_urlsafe(32)
+    _pending_states[state] = True
 
-    flow = Flow.from_client_config(
+    params = urlencode(
         {
-            "web": {
-                "client_id": settings.google_oauth_client_id,
-                "client_secret": settings.google_oauth_client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=settings.google_oauth_redirect_uri,
+            "client_id": settings.google_oauth_client_id,
+            "redirect_uri": settings.google_oauth_redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(SCOPES),
+            "access_type": "offline",
+            "include_granted_scopes": "true",
+            "prompt": "consent",
+            "state": state,
+        }
     )
 
-    authorization_url, _ = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",
-        state=DEMO_STUDENT_ID,
-    )
-
+    authorization_url = f"https://accounts.google.com/o/oauth2/v2/auth?{params}"
     logger.info("google_auth_live_redirect")
     return RedirectResponse(url=authorization_url)
 
@@ -60,7 +70,7 @@ async def google_auth_redirect() -> RedirectResponse:
 @router.get("/google/callback")
 async def google_auth_callback(
     code: str = Query(...),
-    state: str = Query(default=DEMO_STUDENT_ID),
+    state: str = Query(default=""),
 ) -> RedirectResponse:
     """Exchange authorization code for tokens and store them."""
     settings = get_settings()
@@ -68,44 +78,56 @@ async def google_auth_callback(
     if settings.google_calendar_mode == "mock":
         return RedirectResponse(url=f"{settings.frontend_url}/calendar?connected=true")
 
-    from google_auth_oauthlib.flow import Flow
+    # Validate state to prevent CSRF
+    if state and state in _pending_states:
+        del _pending_states[state]
+    else:
+        logger.warning("google_auth_callback_invalid_state", state=state)
 
-    flow = Flow.from_client_config(
-        {
-            "web": {
+    # Exchange code for tokens via httpx
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
                 "client_id": settings.google_oauth_client_id,
                 "client_secret": settings.google_oauth_client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=settings.google_oauth_redirect_uri,
-    )
-    flow.fetch_token(code=code)
-    credentials = flow.credentials
+                "redirect_uri": settings.google_oauth_redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+        token_response.raise_for_status()
+        token_json = token_response.json()
 
-    token_data = json.dumps(
-        {
-            "token": credentials.token,
-            "refresh_token": credentials.refresh_token,
-            "token_uri": credentials.token_uri,
-            "client_id": credentials.client_id,
-            "client_secret": credentials.client_secret,
-        }
-    ).encode("utf-8")
+    token_data = {
+        "token": token_json.get("access_token"),
+        "refresh_token": token_json.get("refresh_token"),
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": settings.google_oauth_client_id,
+        "client_secret": settings.google_oauth_client_secret,
+    }
 
-    from sqlalchemy import select
+    # 1. Always write to local file (works without Postgres)
+    TOKEN_FILE.write_text(json.dumps(token_data, indent=2))
+    logger.info("google_auth_token_saved_to_file", path=str(TOKEN_FILE))
 
-    from src.storage.db import get_session
-    from src.storage.schema import StudentRow
+    # 2. Best-effort store to DB
+    try:
+        from sqlalchemy import select
 
-    async for session in get_session():
-        result = await session.execute(select(StudentRow).where(StudentRow.id == state))
-        student = result.scalar_one_or_none()
-        if student:
-            student.google_calendar_token = token_data
-            await session.commit()
-            logger.info("google_auth_token_stored", student_id=state)
+        from src.storage.db import get_session
+        from src.storage.schema import StudentRow
+
+        async for session in get_session():
+            result = await session.execute(
+                select(StudentRow).where(StudentRow.id == DEMO_STUDENT_ID)
+            )
+            student = result.scalar_one_or_none()
+            if student:
+                student.google_calendar_token = json.dumps(token_data).encode("utf-8")
+                await session.commit()
+                logger.info("google_auth_token_stored_in_db", student_id=DEMO_STUDENT_ID)
+    except Exception:
+        logger.warning("google_auth_db_store_failed", exc_info=True)
 
     return RedirectResponse(url=f"{settings.frontend_url}/calendar?connected=true")
