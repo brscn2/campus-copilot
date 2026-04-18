@@ -32,6 +32,13 @@ class StudentRow(Base):
     priorities: Mapped[dict[str, int]] = mapped_column(JSONB, default=dict)
     google_calendar_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     tum_credentials: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # User-applied corrections to the regex-derived course metadata in
+    # `src/api/pipeline.py::_parse_download_folder`.  Keyed by Cognee dataset
+    # name so the underlying S3 prefix and quiz/flashcard history stay stable.
+    # Shape: { "<dataset_name>": {"semester": "WiSe 2025/26"} }
+    course_overrides: Mapped[dict[str, dict[str, str]]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
 
     courses: Mapped[list[CourseRow]] = relationship(back_populates="student")
     bookings: Mapped[list[BookingRow]] = relationship(back_populates="student")
