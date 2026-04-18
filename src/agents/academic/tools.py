@@ -12,16 +12,16 @@ from langchain_core.tools import tool
 from src.integrations.library import book_room as _book_room
 from src.integrations.library import search_rooms as _search_rooms
 from src.integrations.moodle import get_courses as _get_courses
+from src.integrations.moodle import get_deadlines as _get_deadlines
+from src.integrations.moodle import get_slides as _get_slides
 from src.integrations.moodle import get_uploads as _get_uploads
+from src.integrations.tumonline import get_professor_info as _get_professor_info
+from src.integrations.tumonline import search_thesis_opportunities as _search_thesis
 from src.lib.memory import get_core_concepts as _get_core_concepts
 from src.lib.memory import get_prerequisites as _get_prerequisites
 from src.lib.memory import query_course_knowledge as _query_course_knowledge
 from src.lib.quiz import list_available_quizzes as _list_quizzes
 from src.lib.quiz import load_quiz as _load_quiz
-from src.integrations.moodle import get_deadlines as _get_deadlines
-from src.integrations.moodle import get_slides as _get_slides
-from src.integrations.tumonline import get_professor_info as _get_professor_info
-from src.integrations.tumonline import search_thesis_opportunities as _search_thesis
 
 
 @tool
@@ -136,6 +136,10 @@ async def take_quiz(
         "core_concept": core_concept,
         "questions": served,
         "total_available": len(questions),
+    }
+
+
+@tool
 async def search_thesis_opportunities(
     keywords: list[str] | None = None,
     chair: str | None = None,
@@ -240,13 +244,6 @@ async def list_course_uploads(
         moodle_course_id: The Moodle course ID (numeric string).
     """
     return await _get_uploads(moodle_course_id)
-async def get_my_courses(student_id: str) -> list[dict[str, Any]]:
-    """Get the student's enrolled Moodle courses.
-
-    Args:
-        student_id: The student identifier.
-    """
-    return await _get_courses(student_id=student_id)
 
 
 @tool
@@ -254,7 +251,7 @@ async def get_lecture_slides(course_id: str) -> list[dict[str, Any]]:
     """Get lecture slides for a course, including AI-generated summaries.
 
     Args:
-        course_id: The Moodle course identifier from get_my_courses results.
+        course_id: The Moodle course identifier from list_moodle_courses results.
     """
     return await _get_slides(course_id=course_id)
 

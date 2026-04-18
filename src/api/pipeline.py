@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -113,8 +117,6 @@ class SyncedCoursesResponse(BaseModel):
     courses: list[SyncedCourse]
 
 
-import re
-
 _CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?")
 _SEM_RE = re.compile(r"((?:SoSe|WiSe)\s+\d{4}(?:[_/]\d{2,4})?)")
 _FACULTY_RE = re.compile(
@@ -142,7 +144,7 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     return name or raw_name, code, semester
 
 
-def _build_download_to_extract_map(download_dir: "Path", extract_dir: "Path") -> dict[str, str]:
+def _build_download_to_extract_map(download_dir: Path) -> dict[str, str]:
     """Map extracted folder names back to their original download folder names."""
     from src.integrations.content_pipeline import _safe_dataset_name
 
@@ -169,7 +171,7 @@ async def list_synced_courses() -> SyncedCoursesResponse:
     if not extract_dir.exists():
         return SyncedCoursesResponse(courses=[])
 
-    name_map = _build_download_to_extract_map(download_dir, extract_dir)
+    name_map = _build_download_to_extract_map(download_dir)
 
     courses: list[SyncedCourse] = []
     for course_dir in sorted(extract_dir.iterdir()):
