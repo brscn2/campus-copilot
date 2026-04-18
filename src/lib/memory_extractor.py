@@ -50,7 +50,13 @@ async def extract_and_remember(
             temperature=0.0,
         )
 
-        raw = response["content"][0]["text"]
+        raw = response["content"][0]["text"].strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        if not raw:
+            logger.info("memory_extract_empty_response", student_id=student_id)
+            return
         facts: list[str] = json.loads(raw)
 
         if not facts:

@@ -91,8 +91,10 @@ async def run(agent_input: AgentInput) -> AgentOutput:
         history_len=len(agent_input.history),
     )
 
+    # Limit history to last 10 messages to avoid Bedrock message ordering issues
+    recent_history = agent_input.history[-10:]
     history_msgs: list[BaseMessage] = []
-    for turn in agent_input.history:
+    for turn in recent_history:
         if turn["role"] == "user":
             history_msgs.append(HumanMessage(content=turn["content"]))
         else:
