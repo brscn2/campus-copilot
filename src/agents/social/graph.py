@@ -1,4 +1,4 @@
-"""LangGraph definition for the Academic agent."""
+"""LangGraph definition for the Social agent."""
 
 from __future__ import annotations
 
@@ -9,54 +9,35 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 
-from src.agents.academic.prompts import ACADEMIC_SYSTEM
-from src.agents.academic.state import AcademicState
-from src.agents.academic.tools import (
-    book_room,
-    get_prerequisites,
-    get_progress,
-    list_course_uploads,
-    list_moodle_courses,
-    search_lectures,
-    search_rooms,
-    take_quiz,
-    draft_thesis_email,
-    get_deadlines,
-    get_lecture_slides,
-    get_my_courses,
-    get_professor_contact,
-    search_rooms,
-    search_thesis_opportunities,
-)
 from src.agents.base import AgentInput, AgentOutput
+from src.agents.social.prompts import SOCIAL_SYSTEM
+from src.agents.social.state import SocialState
+from src.agents.social.tools import (
+    get_mensa_menu,
+    register_zhs_course,
+    search_events,
+    search_zhs_courses,
+    set_zhs_snipe_alert,
+)
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
 TOOLS = [
-    search_rooms,
-    book_room,
-    search_lectures,
-    get_progress,
-    take_quiz,
-    get_prerequisites,
-    list_moodle_courses,
-    list_course_uploads,
-    search_thesis_opportunities,
-    get_professor_contact,
-    draft_thesis_email,
-    get_my_courses,
-    get_lecture_slides,
-    get_deadlines,
+    search_zhs_courses,
+    register_zhs_course,
+    set_zhs_snipe_alert,
+    search_events,
+    get_mensa_menu,
 ]
 
 
-def _build_graph() -> StateGraph[AcademicState]:
-    """Construct the Academic agent graph."""
+def _build_graph() -> StateGraph[SocialState]:
+    """Construct the Social agent graph."""
 
-    async def agent_node(state: AcademicState) -> dict[str, Any]:
-        system_prompt = ACADEMIC_SYSTEM.format(
+    async def agent_node(state: SocialState) -> dict[str, Any]:
+        system_prompt = SOCIAL_SYSTEM.format(
             today=date.today().isoformat(),
             student_id=state["student_id"],
         )
@@ -65,13 +46,13 @@ def _build_graph() -> StateGraph[AcademicState]:
         response = await llm_with_tools.ainvoke(state["messages"])
         return {"messages": [response]}
 
-    def should_continue(state: AcademicState) -> str:
+    def should_continue(state: SocialState) -> str:
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and last.tool_calls:
             return "tools"
         return "end"
 
-    graph = StateGraph(AcademicState)
+    graph = StateGraph(SocialState)
     graph.add_node("agent", agent_node)
     graph.add_node("tools", ToolNode(TOOLS))
 
@@ -86,23 +67,16 @@ _compiled_graph = _build_graph().compile()
 
 
 async def run(agent_input: AgentInput) -> AgentOutput:
-    """Public entrypoint — run the Academic agent graph.
-
-    Args:
-        agent_input: Standard agent input with query, session_id, student_id.
-
-    Returns:
-        AgentOutput with the response message and any proposed actions.
-    """
+    """Public entrypoint — run the Social agent graph."""
     from langchain_core.messages import HumanMessage
 
     logger.info(
-        "academic_agent_run",
+        "social_agent_run",
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
     )
 
-    initial_state = AcademicState(
+    initial_state = SocialState(
         messages=[HumanMessage(content=agent_input.query)],
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
@@ -114,7 +88,7 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     response_text: str = last_message.content if isinstance(last_message.content, str) else ""
 
     return AgentOutput(
-        agent="academic",
+        agent="social",
         message=response_text,
         actions=[],
         data={},

@@ -17,9 +17,17 @@ def _get_agent_runner(agent_name: str) -> Any:
     """Lazy-load agent run functions to avoid circular imports."""
     if agent_name not in AGENT_RUNNERS:
         if agent_name == "academic":
-            from src.agents.academic.graph import run
+            from src.agents.academic.graph import run as academic_run
 
-            AGENT_RUNNERS["academic"] = run
+            AGENT_RUNNERS["academic"] = academic_run
+        elif agent_name == "career":
+            from src.agents.career.graph import run as career_run
+
+            AGENT_RUNNERS["career"] = career_run
+        elif agent_name == "social":
+            from src.agents.social.graph import run as social_run
+
+            AGENT_RUNNERS["social"] = social_run
         else:
             AGENT_RUNNERS[agent_name] = None
     return AGENT_RUNNERS[agent_name]

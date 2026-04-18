@@ -1,4 +1,4 @@
-"""Haiku-powered intent classifier — routes to specialist agents."""
+"""Intent classifier — routes to specialist agents."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ VALID_AGENTS = {"academic", "career", "social"}
 async def classify_intent(query: str) -> Literal["academic", "career", "social"]:
     """Classify a user query to the correct specialist agent.
 
-    Uses Haiku for fast, cheap classification.
+    Uses Sonnet for classification.
 
     Args:
         query: The user's message.
@@ -26,7 +26,7 @@ async def classify_intent(query: str) -> Literal["academic", "career", "social"]
     Returns:
         One of 'academic', 'career', 'social'.
     """
-    llm = get_chat_model(model="haiku", temperature=0.0, max_tokens=10)
+    llm = get_chat_model(model="sonnet", temperature=0.0, max_tokens=10)
 
     messages = [
         SystemMessage(content=ROUTER_SYSTEM),

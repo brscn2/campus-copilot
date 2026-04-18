@@ -280,24 +280,24 @@ function CourseDetailDialog({ course, onClose }: { course: Course | null; onClos
                 <Accordion type="single" collapsible className="w-full">
                   {course.lectures.map((l) => (
                     <AccordionItem key={l.id} value={`l-${l.id}`}>
-                      <AccordionTrigger className="gap-3">
-                        <div className="flex flex-1 items-center justify-between gap-3 pr-3">
+                      <div className="flex items-center gap-3">
+                        <AccordionTrigger className="flex-1 gap-3">
                           <span className="text-left text-sm font-medium">{l.title}</span>
-                          <div
-                            className="flex items-center gap-2 text-xs text-muted-foreground"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <span>Reviewed</span>
-                            <Switch
-                              checked={!!reviewed[l.id]}
-                              onCheckedChange={(v) =>
-                                setReviewed((prev) => ({ ...prev, [l.id]: v }))
-                              }
-                              aria-label={`Mark ${l.title} reviewed`}
-                            />
-                          </div>
+                        </AccordionTrigger>
+                        <div
+                          className="flex items-center gap-2 pr-3 text-xs text-muted-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <span>Reviewed</span>
+                          <Switch
+                            checked={!!reviewed[l.id]}
+                            onCheckedChange={(v) =>
+                              setReviewed((prev) => ({ ...prev, [l.id]: v }))
+                            }
+                            aria-label={`Mark ${l.title} reviewed`}
+                          />
                         </div>
-                      </AccordionTrigger>
+                      </div>
                       <AccordionContent className="text-sm text-muted-foreground">
                         {l.summary}
                       </AccordionContent>

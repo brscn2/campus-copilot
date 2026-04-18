@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
+
 from fastapi import FastAPI, Request
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from src.config import get_settings
 from src.exceptions import (
@@ -21,18 +28,37 @@ setup_logging(json_output=get_settings().environment == "production")
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan — verify DB connectivity on startup."""
+    try:
+        from src.storage.db import _engine
+
+        async with _engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("startup_db_connected", database=get_settings().database_url.split("@")[-1])
+    except Exception:
+        logger.warning("startup_db_unavailable", exc_info=True)
+    yield
+
+
 def create_app() -> FastAPI:
     """Build and return the FastAPI application."""
     application = FastAPI(
         title="Campus Co-Pilot",
         version="0.1.0",
         description="Multi-agent AI backend for TUM students",
+        lifespan=lifespan,
     )
 
     settings = get_settings()
+    origins = [settings.frontend_url]
+    if settings.environment == "development":
+        origins.append("http://localhost:3000")
+        origins.append("http://127.0.0.1:3000")
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_url],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -79,6 +105,8 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 def _register_routes(application: FastAPI) -> None:
     """Register all API routers."""
+    from src.api.academic import router as academic_router
+    from src.api.career import router as career_router
     from src.api.chat import router as chat_router
     from src.api.cognify import router as cognify_router
     from src.api.health import router as health_router
@@ -88,6 +116,13 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(chat_router, prefix="/api")
     application.include_router(cognify_router)
     application.include_router(pipeline_router)
+    from src.api.social import router as social_router
+
+    application.include_router(health_router)
+    application.include_router(chat_router, prefix="/api")
+    application.include_router(academic_router, prefix="/api")
+    application.include_router(career_router, prefix="/api")
+    application.include_router(social_router, prefix="/api")
 
 
 app = create_app()
