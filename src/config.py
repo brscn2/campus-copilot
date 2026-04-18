@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # Cognee
     cognee_api_key: str = ""
     cognee_api_url: str = "https://api.cognee.ai"
+    cognee_dataset_prefix: str = "course_"
+
+    # Quiz
+    quiz_storage_dir: str = ".quiz_cache"
 
     # Google Calendar
     google_oauth_client_id: str = ""

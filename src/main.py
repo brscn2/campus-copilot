@@ -80,10 +80,12 @@ def _register_exception_handlers(application: FastAPI) -> None:
 def _register_routes(application: FastAPI) -> None:
     """Register all API routers."""
     from src.api.chat import router as chat_router
+    from src.api.cognify import router as cognify_router
     from src.api.health import router as health_router
 
     application.include_router(health_router)
     application.include_router(chat_router, prefix="/api")
+    application.include_router(cognify_router)
 
 
 app = create_app()

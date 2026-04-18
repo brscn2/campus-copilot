@@ -11,14 +11,21 @@ from langgraph.prebuilt import ToolNode
 
 from src.agents.academic.prompts import ACADEMIC_SYSTEM
 from src.agents.academic.state import AcademicState
-from src.agents.academic.tools import book_room, search_rooms
+from src.agents.academic.tools import (
+    book_room,
+    get_prerequisites,
+    get_progress,
+    search_lectures,
+    search_rooms,
+    take_quiz,
+)
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS = [search_rooms, book_room]
+TOOLS = [search_rooms, book_room, search_lectures, get_progress, take_quiz, get_prerequisites]
 
 
 def _build_graph() -> StateGraph[AcademicState]:

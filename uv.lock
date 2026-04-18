@@ -476,6 +476,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "boto3" },
     { name = "cognee" },
+    { name = "cogwit-sdk" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "langchain-aws" },
@@ -506,6 +507,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "boto3", specifier = ">=1.35.0" },
     { name = "cognee", specifier = ">=0.1.0" },
+    { name = "cogwit-sdk", specifier = ">=0.1.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "langchain-aws", specifier = ">=0.2.0" },
@@ -794,6 +796,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7f/5b/bb958e07de8b1d07ad4c522f94b8ba044b0e5333f4a432f19f02522909c4/cognee-1.0.0.tar.gz", hash = "sha256:ba32197d8c345066e9c459fe7577eea6832cc4b0c635e30c7888ba57c9513faf", size = 18339747, upload-time = "2026-04-11T18:17:15.465Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/dc/3421fd9baec5ffaa59a5d76cd9b073c5005d86b3d725a62c1773dc9da261/cognee-1.0.0-py3-none-any.whl", hash = "sha256:c44beea0e43172a1b84e31793e6d8cb4c62ce2e117d16b8131e827aad1f38cac", size = 1962915, upload-time = "2026-04-11T18:17:18.349Z" },
+]
+
+[[package]]
+name = "cogwit-sdk"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/38/c1a903dfb089db047335a8165d1371c249bea35bc549c544a19361cc4b4b/cogwit_sdk-0.1.0.tar.gz", hash = "sha256:4aef30f3192363cbe6bd6e5bacca99272bcd6ddf64b7cfaa6a5cc2dc97a8e973", size = 6258, upload-time = "2025-09-11T14:14:43.649Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/5a/e6cf50cfedbb7c8c8710d1933b1b217dfac274e987083a193a63a0ac3920/cogwit_sdk-0.1.0-py3-none-any.whl", hash = "sha256:59cecd9acbf62452f5e3f7b517cbcf3c30e26a75584e63c99f1a560ca8bcdfd9", size = 814, upload-time = "2025-09-11T14:14:42.675Z" },
 ]
 
 [[package]]
