@@ -40,14 +40,45 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
         yield format_sse_event("thinking", {"message": "Routing your request..."})
 
-        # TODO(brscn): Wire to orchestrator graph
-        yield format_sse_event(
-            "final",
-            {
-                "message": "Campus Co-Pilot backend is running. Orchestrator not yet wired.",
-                "agent": None,
-            },
-        )
+        try:
+            from src.orchestrator.graph import run_orchestrator
+
+            output = await run_orchestrator(
+                query=request.message,
+                session_id=request.session_id,
+                student_id=request.student_id,
+            )
+
+            if output.actions:
+                for action in output.actions:
+                    yield format_sse_event(
+                        "draft_ready",
+                        {
+                            "action_type": action.action_type,
+                            "description": action.description,
+                            "payload": action.payload,
+                            "requires_approval": action.requires_approval,
+                        },
+                    )
+
+            yield format_sse_event(
+                "final",
+                {
+                    "message": output.message,
+                    "agent": output.agent,
+                    "data": output.data,
+                },
+            )
+
+        except Exception:
+            logger.error("chat_stream_error", exc_info=True)
+            yield format_sse_event(
+                "final",
+                {
+                    "message": "Sorry, something went wrong processing your request.",
+                    "agent": None,
+                },
+            )
 
     return StreamingResponse(
         event_stream(),

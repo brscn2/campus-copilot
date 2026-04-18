@@ -89,3 +89,26 @@ def get_haiku_model_id() -> str:
 def get_titan_embed_model_id() -> str:
     """Return the configured Titan Embed model ID."""
     return get_settings().bedrock_titan_embed_model_id
+
+
+def get_chat_model(
+    *, model: str = "sonnet", temperature: float = 0.3, max_tokens: int = 1024
+) -> Any:
+    """Return a LangChain ChatBedrock instance for use with LangGraph.
+
+    Args:
+        model: One of 'sonnet', 'haiku'.
+        temperature: Sampling temperature.
+        max_tokens: Maximum tokens to generate.
+    """
+    from langchain_aws import ChatBedrock
+
+    settings = get_settings()
+    model_id = get_sonnet_model_id() if model == "sonnet" else get_haiku_model_id()
+
+    return ChatBedrock(
+        model_id=model_id,
+        region_name=settings.bedrock_region,
+        credentials_profile_name=None,
+        model_kwargs={"temperature": temperature, "max_tokens": max_tokens},
+    )
