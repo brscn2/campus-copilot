@@ -82,6 +82,41 @@ export function getCognifyStatus(jobId: string): Promise<JobStatus> {
 
 // --- Learning (quiz, flashcards, progress) ---
 
+export interface ContentItem {
+  title: string
+  number: number | null
+  filename: string
+  s3_key: string
+  size: number
+}
+
+export interface CourseContent {
+  lectures: ContentItem[]
+  exercises: ContentItem[]
+  other: ContentItem[]
+}
+
+export function getCourseContent(courseId: string): Promise<CourseContent> {
+  return request(`/api/learning/course-content/${encodeURIComponent(courseId)}`)
+}
+
+export function setManualMastery(
+  studentId: string,
+  courseId: string,
+  coreConcept: string,
+  mastery: number,
+): Promise<{ core_concept: string; mastery_score: number }> {
+  return request("/api/learning/mastery", {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: studentId,
+      course_id: courseId,
+      core_concept: coreConcept,
+      mastery,
+    }),
+  })
+}
+
 export interface QuizQuestion {
   id: string
   core_concept: string
