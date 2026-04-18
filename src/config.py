@@ -25,10 +25,10 @@ class Settings(BaseSettings):
     # AWS
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    aws_region: str = "eu-north-1"
+    aws_region: str = "eu-central-1"
 
     # Bedrock
-    bedrock_region: str = "eu-north-1"
+    bedrock_region: str = "eu-central-1"
     bedrock_sonnet_model_id: str = "anthropic.claude-sonnet-4-6-20250514-v1:0"
     bedrock_haiku_model_id: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
     bedrock_titan_embed_model_id: str = "amazon.titan-embed-text-v2:0"

@@ -16,6 +16,7 @@ from src.config import get_settings
 from src.exceptions import CogneeIngestionError
 from src.lib.cognify import trigger_cognify, upload_file_to_cognee
 from src.lib.logging import get_logger
+from src.lib.s3 import upload_file as s3_upload
 
 logger = get_logger(__name__)
 
@@ -112,10 +113,17 @@ async def ingest_course(
 
     logger.info("pipeline_ingest_start", dataset=dataset_name, files=len(pdf_paths))
 
+    s3_keys: list[str] = []
+
     for pdf_path in pdf_paths:
         path = Path(pdf_path)
         try:
             file_content = path.read_bytes()
+
+            s3_key = f"slides/{dataset_name}/{path.name}"
+            await s3_upload(s3_key, file_content, content_type="application/pdf")
+            s3_keys.append(s3_key)
+
             await upload_file_to_cognee(
                 course_id=course_id,
                 file_content=file_content,
@@ -140,6 +148,7 @@ async def ingest_course(
         "dataset": dataset_name,
         "status": "ingesting",
         "files_uploaded": len(pdf_paths),
+        "s3_keys": s3_keys,
         "cognify_job_id": job_id,
     }
 

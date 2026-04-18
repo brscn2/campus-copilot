@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { courses, deadlines, theses, studyRooms } from "@/lib/mock-data"
+import { runFullPipeline, listCourseFiles, getFileUrl, type CourseFile } from "@/lib/api"
 import { AgentBadge } from "@/components/agent-badge"
 import {
   ArrowRight,
@@ -39,9 +40,13 @@ import {
   BookOpen,
   Calendar as CalendarIcon,
   ChevronRight,
+  Download,
+  FileText,
   Layers,
+  Loader2,
   Mail,
   MapPin,
+  RefreshCw,
   Search,
   Sparkles,
   Users as UsersIcon,
@@ -87,9 +92,29 @@ export default function AcademicPage() {
 
 function CoursesTab() {
   const [selected, setSelected] = React.useState<Course | null>(null)
+  const [syncing, setSyncing] = React.useState(false)
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const result = await runFullPipeline()
+      const ingested = result.ingestions?.filter((i) => i.status === "ingesting").length ?? 0
+      toast.success(`Pipeline complete: ${ingested} courses ingested to S3 + Cognee`)
+    } catch (err) {
+      toast.error(`Pipeline failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   return (
     <>
+      <div className="mb-4 flex justify-end">
+        <Button onClick={handleSync} disabled={syncing} className="gap-2">
+          {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {syncing ? "Syncing from Moodle…" : "Sync from Moodle"}
+        </Button>
+      </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {courses.map((c) => (
           <button
@@ -135,12 +160,23 @@ function CoursesTab() {
 function CourseDetailDialog({ course, onClose }: { course: Course | null; onClose: () => void }) {
   const [quizOpen, setQuizOpen] = React.useState(false)
   const [reviewed, setReviewed] = React.useState<Record<number, boolean>>({})
+  const [files, setFiles] = React.useState<CourseFile[]>([])
+  const [filesLoading, setFilesLoading] = React.useState(false)
 
   React.useEffect(() => {
     if (course) {
       const init: Record<number, boolean> = {}
       course.lectures.forEach((l) => (init[l.id] = l.reviewed))
       setReviewed(init)
+
+      setFilesLoading(true)
+      const datasetName = course.code.toLowerCase().replace(/[^a-z0-9]/g, "")
+      listCourseFiles(datasetName)
+        .then((res) => setFiles(res.files))
+        .catch(() => setFiles([]))
+        .finally(() => setFilesLoading(false))
+    } else {
+      setFiles([])
     }
   }, [course])
 
@@ -205,6 +241,50 @@ function CourseDetailDialog({ course, onClose }: { course: Course | null; onClos
                   ))}
                 </Accordion>
               </div>
+
+              {files.length > 0 && (
+                <div>
+                  <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
+                  <div className="flex flex-col gap-1.5">
+                    {files.map((f) => {
+                      const filename = f.key.split("/").pop() ?? f.key
+                      return (
+                        <div
+                          key={f.key}
+                          className="flex items-center justify-between rounded-lg border border-border p-2.5"
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span>{filename}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({(f.size / 1024).toFixed(0)} KB)
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5"
+                            onClick={async () => {
+                              const datasetName = course.code.toLowerCase().replace(/[^a-z0-9]/g, "")
+                              const res = await getFileUrl(datasetName, filename)
+                              window.open(res.url, "_blank")
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+              {filesLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading files…
+                </div>
+              )}
             </>
           ) : null}
         </DialogContent>

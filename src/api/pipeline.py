@@ -94,3 +94,38 @@ async def run_full(request: PipelineRequest) -> FullPipelineResponse:
     logger.info("pipeline_run_full", semester=request.semester)
     result = await run_full_pipeline(semester=request.semester)
     return FullPipelineResponse(**result)
+
+
+class FileListResponse(BaseModel):
+    """Response listing files in S3."""
+
+    files: list[dict[str, Any]]
+
+
+class PresignedUrlResponse(BaseModel):
+    """Response with a presigned download URL."""
+
+    url: str
+    key: str
+
+
+@router.get("/files/{course_id}", response_model=FileListResponse)
+async def list_course_files(course_id: str) -> FileListResponse:
+    """List all files uploaded to S3 for a course."""
+    from src.lib.s3 import list_objects
+
+    prefix = f"slides/{course_id}/"
+    logger.info("pipeline_list_files", course_id=course_id, prefix=prefix)
+    files = await list_objects(prefix)
+    return FileListResponse(files=files)
+
+
+@router.get("/files/{course_id}/{filename}/url", response_model=PresignedUrlResponse)
+async def get_file_url(course_id: str, filename: str) -> PresignedUrlResponse:
+    """Get a presigned URL to download a course file."""
+    from src.lib.s3 import generate_presigned_url
+
+    key = f"slides/{course_id}/{filename}"
+    logger.info("pipeline_presigned_url", key=key)
+    url = await generate_presigned_url(key)
+    return PresignedUrlResponse(url=url, key=key)
