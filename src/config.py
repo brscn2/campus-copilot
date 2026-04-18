@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # Cognee Cloud
     cognee_api_key: str = ""
+    cognee_api_url: str = ""
 
     # Google Calendar
     google_oauth_client_id: str = ""

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import structlog
-from cogwit_sdk import CogwitConfig, SearchType, cogwit
 
 from src.config import get_settings
+
+# cogwit_sdk reads COGWIT_API_BASE at import time — set before importing
+_boot_settings = get_settings()
+if _boot_settings.cognee_api_url:
+    os.environ["COGWIT_API_BASE"] = _boot_settings.cognee_api_url
+
+from cogwit_sdk import CogwitConfig, SearchType, cogwit  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
@@ -16,7 +23,7 @@ _client: cogwit | None = None
 
 def _get_client() -> cogwit | None:
     """Lazy-init the Cognee Cloud client."""
-    global _client
+    global _client  # noqa: PLW0603
     if _client is None:
         settings = get_settings()
         if not settings.cognee_api_key:
