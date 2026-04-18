@@ -242,10 +242,10 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   const [filesLoading, setFilesLoading] = React.useState(false)
   const [quizOpen, setQuizOpen] = React.useState(false)
   const [flashcardOpen, setFlashcardOpen] = React.useState(false)
+  const [configOpen, setConfigOpen] = React.useState<"quiz" | "flashcard" | null>(null)
   const [quizQuestions, setQuizQuestions] = React.useState<QuizQuestion[]>([])
   const [flashcards, setFlashcards] = React.useState<FlashcardItem[]>([])
-  const [loadingQuiz, setLoadingQuiz] = React.useState(false)
-  const [loadingFlashcards, setLoadingFlashcards] = React.useState(false)
+  const [loadingContent, setLoadingContent] = React.useState(false)
 
   React.useEffect(() => {
     if (course) {
@@ -266,31 +266,25 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
     mastery = 30 + (Math.abs(hash) % 55)
   }
 
-  const handleStartQuiz = async () => {
+  const handleLaunch = async (type: "quiz" | "flashcard", count: number, concept: string) => {
     if (!course) return
-    setLoadingQuiz(true)
+    setLoadingContent(true)
+    setConfigOpen(null)
+    const concepts = concept ? [concept] : []
     try {
-      const session = await requestQuiz("demo", course.dataset_name, 5)
-      setQuizQuestions(session.questions)
-      setQuizOpen(true)
+      if (type === "quiz") {
+        const session = await requestQuiz("demo", course.dataset_name, count, concepts)
+        setQuizQuestions(session.questions)
+        setQuizOpen(true)
+      } else {
+        const session = await requestFlashcards("demo", course.dataset_name, count, concepts)
+        setFlashcards(session.cards)
+        setFlashcardOpen(true)
+      }
     } catch (err) {
-      toast.error(`Failed to load quiz: ${err instanceof Error ? err.message : "Unknown error"}`)
+      toast.error(`Failed to load ${type}: ${err instanceof Error ? err.message : "Unknown error"}`)
     } finally {
-      setLoadingQuiz(false)
-    }
-  }
-
-  const handleStartFlashcards = async () => {
-    if (!course) return
-    setLoadingFlashcards(true)
-    try {
-      const session = await requestFlashcards("demo", course.dataset_name, 10)
-      setFlashcards(session.cards)
-      setFlashcardOpen(true)
-    } catch (err) {
-      toast.error(`Failed to load flashcards: ${err instanceof Error ? err.message : "Unknown error"}`)
-    } finally {
-      setLoadingFlashcards(false)
+      setLoadingContent(false)
     }
   }
 
@@ -320,10 +314,10 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                     variant="outline"
                     size="sm"
                     className="gap-1.5"
-                    onClick={handleStartFlashcards}
-                    disabled={loadingFlashcards}
+                    onClick={() => setConfigOpen("flashcard")}
+                    disabled={loadingContent}
                   >
-                    {loadingFlashcards ? (
+                    {loadingContent && configOpen === "flashcard" ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Layers className="h-3.5 w-3.5" />
@@ -333,10 +327,10 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                   <Button
                     size="sm"
                     className="gap-1.5"
-                    onClick={handleStartQuiz}
-                    disabled={loadingQuiz}
+                    onClick={() => setConfigOpen("quiz")}
+                    disabled={loadingContent}
                   >
-                    {loadingQuiz ? (
+                    {loadingContent && configOpen === "quiz" ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Sparkles className="h-3.5 w-3.5" />
@@ -355,37 +349,38 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
 
               {files.length > 0 && (
                 <div>
-                  <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
-                  <div className="flex flex-col gap-1.5">
-                    {files.map((f) => {
-                      const filename = f.key.split("/").pop() ?? f.key
-                      return (
-                        <div
-                          key={f.key}
-                          className="flex items-center justify-between rounded-lg border border-border p-2.5"
-                        >
-                          <div className="flex items-center gap-2 text-sm">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <span>{filename}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({(f.size / 1024).toFixed(0)} KB)
-                            </span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="gap-1.5"
-                            onClick={async () => {
-                              const res = await getFileUrl(course.dataset_name, filename)
-                              window.open(res.url, "_blank")
-                            }}
+                  <div className="mb-2 text-sm font-medium">Lecture slides ({files.length})</div>
+                  <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border">
+                    <div className="flex flex-col">
+                      {files.map((f) => {
+                        const filename = f.key.split("/").pop() ?? f.key
+                        return (
+                          <div
+                            key={f.key}
+                            className="flex items-center justify-between border-b border-border p-2.5 last:border-b-0"
                           >
-                            <Download className="h-3.5 w-3.5" />
-                            Download
-                          </Button>
-                        </div>
-                      )
-                    })}
+                            <div className="flex items-center gap-2 text-sm">
+                              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              <span className="truncate">{filename}</span>
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                ({(f.size / 1024).toFixed(0)} KB)
+                              </span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="shrink-0 gap-1.5"
+                              onClick={async () => {
+                                const res = await getFileUrl(course.dataset_name, filename)
+                                window.open(res.url, "_blank")
+                              }}
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -399,6 +394,13 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <ContentConfigDialog
+        open={configOpen}
+        onClose={() => setConfigOpen(null)}
+        onLaunch={handleLaunch}
+        loading={loadingContent}
+      />
 
       <LiveQuizDialog
         open={quizOpen}
@@ -656,6 +658,126 @@ function QuizDialog({ open, onClose, course }: { open: boolean; onClose: () => v
   )
 }
 
+function ContentConfigDialog({
+  open,
+  onClose,
+  onLaunch,
+  loading,
+}: {
+  open: "quiz" | "flashcard" | null
+  onClose: () => void
+  onLaunch: (type: "quiz" | "flashcard", count: number, concept: string) => void
+  loading: boolean
+}) {
+  const [count, setCount] = React.useState(open === "quiz" ? 10 : 15)
+  const [mode, setMode] = React.useState<"auto" | "mix" | "specific">("auto")
+  const [concept, setConcept] = React.useState("")
+
+  React.useEffect(() => {
+    if (open) {
+      setCount(open === "quiz" ? 10 : 15)
+      setMode("auto")
+      setConcept("")
+    }
+  }, [open])
+
+  const isQuiz = open === "quiz"
+  const min = 5
+  const max = isQuiz ? 30 : 50
+
+  return (
+    <Dialog open={!!open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {isQuiz ? <Sparkles className="h-4 w-4 text-primary" /> : <Layers className="h-4 w-4 text-primary" />}
+            {isQuiz ? "Quiz settings" : "Flashcard settings"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">
+              {isQuiz ? "Number of questions" : "Number of cards"}
+            </label>
+            <div className="flex items-center gap-3">
+              <Input
+                type="number"
+                min={min}
+                max={max}
+                value={count}
+                onChange={(e) => setCount(Math.max(min, Math.min(max, Number(e.target.value) || min)))}
+                className="w-20"
+              />
+              <span className="text-xs text-muted-foreground">{min}–{max}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Focus area</label>
+            <div className="flex flex-col gap-1.5">
+              {(
+                [
+                  ["auto", "Weakest areas", "Auto-picks concepts you struggle with most"],
+                  ["mix", "Mix all concepts", "Pulls from all available concepts evenly"],
+                  ["specific", "Specific concept", "Choose a single concept to focus on"],
+                ] as const
+              ).map(([value, label, desc]) => (
+                <label
+                  key={value}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-lg border border-border p-2.5 text-sm transition-colors",
+                    mode === value && "border-primary bg-primary/5",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="mode"
+                    className="mt-0.5 accent-primary"
+                    checked={mode === value}
+                    onChange={() => setMode(value)}
+                  />
+                  <div>
+                    <div className="font-medium">{label}</div>
+                    <div className="text-xs text-muted-foreground">{desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {mode === "specific" && (
+            <div>
+              <label className="mb-1.5 block text-sm font-medium">Concept name</label>
+              <Input
+                placeholder="e.g. Introduction to AI"
+                value={concept}
+                onChange={(e) => setConcept(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              const conceptArg = mode === "specific" ? concept : ""
+              onLaunch(open!, count, conceptArg)
+            }}
+            disabled={loading || (mode === "specific" && !concept.trim())}
+          >
+            {loading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+            {isQuiz ? "Start quiz" : "Start flashcards"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function LiveQuizDialog({
   open,
   onClose,
@@ -669,13 +791,26 @@ function LiveQuizDialog({
 }) {
   const [answers, setAnswers] = React.useState<Record<number, number>>({})
   const [submitted, setSubmitted] = React.useState(false)
-
   React.useEffect(() => {
     if (open) {
       setAnswers({})
       setSubmitted(false)
     }
   }, [open])
+
+  const handleSubmit = () => {
+    setSubmitted(true)
+  }
+
+  const getCorrectIndex = (q: QuizQuestion): number => {
+    if (!q.correct) return -1
+    const letter = q.correct.trim().toUpperCase()
+    return letter.charCodeAt(0) - 65
+  }
+
+  const score = submitted
+    ? questions.filter((q, i) => answers[i] === getCorrectIndex(q)).length
+    : 0
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -686,7 +821,8 @@ function LiveQuizDialog({
             Quiz · {courseCode}
           </DialogTitle>
           <DialogDescription>
-            {questions.length} questions across {[...new Set(questions.map((q) => q.core_concept))].length} concepts
+            {questions.length} questions across{" "}
+            {[...new Set(questions.map((q) => q.core_concept))].length} concepts
           </DialogDescription>
         </DialogHeader>
         {questions.length === 0 ? (
@@ -695,51 +831,70 @@ function LiveQuizDialog({
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {questions.map((item, i) => (
-              <div key={item.id}>
-                <div className="mb-1 flex items-center gap-2">
-                  <Badge variant="secondary" className="text-[10px] font-normal">
-                    {item.core_concept}
-                  </Badge>
-                  <Badge variant="outline" className="text-[10px] font-normal">
-                    {item.difficulty}
-                  </Badge>
+            {questions.map((item, i) => {
+              const picked = answers[i]
+              return (
+                <div key={item.id}>
+                  <div className="mb-1 flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      {item.core_concept}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] font-normal">
+                      {item.difficulty}
+                    </Badge>
+                  </div>
+                  <div className="mb-2 text-sm font-medium">
+                    {i + 1}. {item.question}
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {item.options.map((opt, oi) => {
+                      const isPicked = picked === oi
+                      const correctIdx = getCorrectIndex(item)
+                      const isCorrectOption = submitted && oi === correctIdx
+                      const isWrong = submitted && isPicked && oi !== correctIdx
+                      return (
+                        <label
+                          key={oi}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-2 rounded-lg border border-border p-2.5 text-sm transition-colors",
+                            !submitted && isPicked && "border-primary bg-primary/5",
+                            isCorrectOption && "border-career bg-career-soft",
+                            isWrong && "border-destructive bg-destructive/10",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name={`lq-${i}`}
+                            className="accent-primary"
+                            checked={isPicked}
+                            onChange={() => setAnswers((a) => ({ ...a, [i]: oi }))}
+                            disabled={submitted}
+                          />
+                          {opt}
+                          {isCorrectOption && submitted && (
+                            <span className="ml-auto text-xs font-medium text-career">Correct</span>
+                          )}
+                          {isWrong && (
+                            <span className="ml-auto text-xs font-medium text-destructive">Wrong</span>
+                          )}
+                        </label>
+                      )
+                    })}
+                    {submitted && item.explanation && (
+                      <div className="mt-1 rounded-lg bg-muted/50 p-2.5 text-xs text-muted-foreground">
+                        {item.explanation}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="mb-2 text-sm font-medium">
-                  {i + 1}. {item.question}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  {item.options.map((opt, oi) => {
-                    const picked = answers[i] === oi
-                    return (
-                      <label
-                        key={oi}
-                        className={cn(
-                          "flex cursor-pointer items-center gap-2 rounded-lg border border-border p-2.5 text-sm transition-colors",
-                          picked && "border-primary bg-primary/5",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name={`lq-${i}`}
-                          className="accent-primary"
-                          checked={picked}
-                          onChange={() => setAnswers((a) => ({ ...a, [i]: oi }))}
-                          disabled={submitted}
-                        />
-                        {opt}
-                      </label>
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
         <DialogFooter className="sm:justify-between">
           <div className="text-sm text-muted-foreground">
             {submitted
-              ? "Submitted!"
+              ? `Score: ${score} / ${questions.length} correct`
               : `${Object.keys(answers).length} / ${questions.length} answered`}
           </div>
           <div className="flex gap-2">
@@ -748,11 +903,8 @@ function LiveQuizDialog({
             </Button>
             {!submitted && questions.length > 0 && (
               <Button
-                onClick={() => {
-                  setSubmitted(true)
-                  toast.success("Quiz submitted!")
-                }}
-                disabled={Object.keys(answers).length < questions.length}
+                onClick={handleSubmit}
+                disabled={Object.keys(answers).length === 0}
               >
                 Submit
               </Button>

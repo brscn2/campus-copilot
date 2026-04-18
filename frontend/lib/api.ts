@@ -89,6 +89,8 @@ export interface QuizQuestion {
   question: string
   options: string[]
   difficulty: string
+  correct?: string
+  explanation?: string
 }
 
 export interface QuizSession {

@@ -356,7 +356,6 @@ async def serve_quiz(
     random.shuffle(unseen_questions)
     selected = unseen_questions[:num_questions]
 
-    # Build QuizQuestionServed (no correct answers exposed)
     questions_served: list[QuizQuestionServed] = []
     for _, _, question in selected:
         questions_served.append(
@@ -367,6 +366,8 @@ async def serve_quiz(
                 question=question.question,
                 options=question.options,
                 difficulty=question.difficulty,
+                correct=question.correct,
+                explanation=question.explanation,
             )
         )
 

@@ -139,7 +139,7 @@ class SetMasteryRequest(BaseModel):
 
 
 class QuizQuestionServed(BaseModel):
-    """A quiz question served to the student (without answer/explanation)."""
+    """A quiz question served to the student, with correct answer for feedback."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -149,6 +149,8 @@ class QuizQuestionServed(BaseModel):
     question: str
     options: list[str]
     difficulty: str
+    correct: str = ""
+    explanation: str = ""
 
 
 class QuizSession(BaseModel):
