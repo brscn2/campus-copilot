@@ -21,7 +21,7 @@ import structlog
 
 from src.lib.bedrock import get_haiku_model_id, get_sonnet_model_id, invoke_model
 from src.lib.memory import get_core_concepts, get_quiz_material, query_course_knowledge
-from src.lib.s3 import upload_file
+from src.lib.s3 import download_file, upload_file
 from src.models.learning import GenerationResult
 
 logger = structlog.get_logger(__name__)
@@ -426,6 +426,29 @@ Generate a concise summary with exactly 3 sentences and 3-5 key takeaways."""
 # ============================================================================
 
 
+async def save_concepts_to_s3(course_id: str, concepts: list[dict[str, Any]]) -> None:
+    """Cache the canonical concept list on S3 for fast reads."""
+    data = {
+        "course_id": course_id,
+        "concepts": concepts,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    key = f"concepts/course_{course_id}.json"
+    await upload_file(key, json.dumps(data, indent=2).encode(), "application/json")
+    logger.info("concepts_cached_to_s3", course_id=course_id, count=len(concepts))
+
+
+async def load_concepts_from_s3(course_id: str) -> list[dict[str, Any]] | None:
+    """Load cached concepts from S3. Returns None if not cached."""
+    key = f"concepts/course_{course_id}.json"
+    try:
+        raw = await download_file(key)
+        data = json.loads(raw)
+        return data.get("concepts", [])
+    except Exception:
+        return None
+
+
 async def generate_all_for_course(course_id: str) -> GenerationResult:
     """Generate all learning content (quizzes, flashcards, summaries) for a course.
 
@@ -447,7 +470,7 @@ async def generate_all_for_course(course_id: str) -> GenerationResult:
     summaries_generated = 0
 
     try:
-        # Phase 1: Get core concepts from Cognee
+        # Phase 1: Get core concepts from Cognee and cache to S3
         concepts = await get_core_concepts(course_id)
         logger.info("concepts_retrieved", course_id=course_id, count=len(concepts))
 
@@ -460,6 +483,8 @@ async def generate_all_for_course(course_id: str) -> GenerationResult:
                 summaries_generated=0,
                 errors=errors,
             )
+
+        await save_concepts_to_s3(course_id, concepts)
 
         # Phase 2: Generate quizzes and flashcards for each core concept
         for concept_data in concepts:
@@ -482,21 +507,22 @@ async def generate_all_for_course(course_id: str) -> GenerationResult:
                 errors.append(f"Failed to generate flashcards for concept: {concept_name}")
 
         # Phase 3: Generate summaries for lectures
-        # Query Cognee for lecture list
-        lecture_query = (
-            "List all lectures or chapters covered in this course. "
-            "Return just the lecture names or chapter numbers."
-        )
-        lecture_results = await query_course_knowledge(course_id, lecture_query)
+        # Use S3 file list to find lectures (Cognee doesn't reliably return lecture titles)
+        from src.lib.s3 import list_objects as s3_list
 
-        if lecture_results:
-            # Extract lecture names (simple heuristic: take first 200 chars of each result)
-            lecture_names = [r[:200].strip() for r in lecture_results[:10]]
+        s3_objects = await s3_list(f"slides/{course_id}/")
+        lecture_names: list[str] = []
+        for obj in s3_objects:
+            fname = obj["key"].split("/")[-1].lower()
+            if any(kw in fname for kw in ("lecture", "slides", "chapter", "vorlesung")):
+                title = obj["key"].split("/")[-1]
+                title = re.sub(r"^\d+_", "", title).replace(".pdf", "")
+                title = re.sub(r"_{3,}", "", title).strip()
+                if title and len(title) > 5:
+                    lecture_names.append(title)
 
+        if lecture_names:
             for lecture_name in lecture_names:
-                if not lecture_name or len(lecture_name) < 5:
-                    continue
-
                 summary_key = await _generate_summary_for_lecture(course_id, lecture_name)
                 if summary_key:
                     summaries_generated += 1

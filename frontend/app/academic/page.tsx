@@ -39,7 +39,11 @@ import {
   listSyncedCourses,
   getCourseProgress,
   getCourseContent,
+  listConcepts,
   setManualMastery,
+  markLectureReviewed,
+  markExerciseDone,
+  getExerciseConcepts,
   requestQuiz,
   requestFlashcards,
   submitQuiz,
@@ -271,11 +275,18 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   const [completedExercises, setCompletedExercises] = React.useState<Record<string, boolean>>({})
   const [editingConcept, setEditingConcept] = React.useState<string | null>(null)
   const [editValue, setEditValue] = React.useState(0)
+  const [conceptNames, setConceptNames] = React.useState<string[]>([])
 
   React.useEffect(() => {
     if (!course) return
     setContentLoading(true)
 
+    // Fast path: concepts list from S3 cache (no Cognee call)
+    listConcepts(course.dataset_name)
+      .then((names) => setConceptNames(names))
+      .catch(() => {})
+
+    // Parallel: progress (Postgres + S3) and content (S3 file list)
     Promise.all([
       getCourseProgress(DEMO_STUDENT, course.dataset_name).catch(() => null),
       getCourseContent(course.dataset_name).catch(() => null),
@@ -396,7 +407,14 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                           <span>Reviewed</span>
                           <Switch
                             checked={!!reviewedLectures[l.s3_key]}
-                            onCheckedChange={(v) => setReviewedLectures((prev) => ({ ...prev, [l.s3_key]: v }))}
+                            onCheckedChange={(v) => {
+                              setReviewedLectures((prev) => ({ ...prev, [l.s3_key]: v }))
+                              if (v && course) {
+                                markLectureReviewed(DEMO_STUDENT, course.dataset_name, l.title)
+                                  .then(() => refreshProgress())
+                                  .catch(() => {})
+                              }
+                            }}
                           />
                         </div>
                       </div>
@@ -468,7 +486,14 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                           <span>Done</span>
                           <Switch
                             checked={!!completedExercises[ex.s3_key]}
-                            onCheckedChange={(v) => setCompletedExercises((prev) => ({ ...prev, [ex.s3_key]: v }))}
+                            onCheckedChange={(v) => {
+                              setCompletedExercises((prev) => ({ ...prev, [ex.s3_key]: v }))
+                              if (v && course) {
+                                markExerciseDone(DEMO_STUDENT, course.dataset_name, ex.title)
+                                  .then(() => refreshProgress())
+                                  .catch(() => {})
+                              }
+                            }}
                           />
                         </div>
                       </div>
@@ -486,6 +511,7 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
         onClose={() => setConfigOpen(null)}
         onLaunch={handleLaunch}
         loading={loadingContent}
+        availableConcepts={conceptNames}
       />
 
       <LiveQuizDialog
@@ -753,11 +779,13 @@ function ContentConfigDialog({
   onClose,
   onLaunch,
   loading,
+  availableConcepts = [],
 }: {
   open: "quiz" | "flashcard" | null
   onClose: () => void
   onLaunch: (type: "quiz" | "flashcard", count: number, concept: string) => void
   loading: boolean
+  availableConcepts?: string[]
 }) {
   const [count, setCount] = React.useState(open === "quiz" ? 10 : 15)
   const [mode, setMode] = React.useState<"auto" | "mix" | "specific">("auto")
@@ -838,12 +866,21 @@ function ContentConfigDialog({
 
           {mode === "specific" && (
             <div>
-              <label className="mb-1.5 block text-sm font-medium">Concept name</label>
-              <Input
-                placeholder="e.g. Introduction to AI"
-                value={concept}
-                onChange={(e) => setConcept(e.target.value)}
-              />
+              <label className="mb-1.5 block text-sm font-medium">Select concept</label>
+              {availableConcepts.length > 0 ? (
+                <select
+                  value={concept}
+                  onChange={(e) => setConcept(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Choose a concept…</option>
+                  {availableConcepts.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="text-xs text-muted-foreground">No concepts available. Run Cognify first.</div>
+              )}
             </div>
           )}
         </div>

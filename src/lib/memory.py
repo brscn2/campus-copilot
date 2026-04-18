@@ -182,10 +182,40 @@ def _try_parse_concepts_json(raw: str) -> list[dict[str, Any]] | None:
     except (json.JSONDecodeError, ValueError):
         return None
 
+    if isinstance(data, list):
+        concepts: list[dict[str, Any]] = []
+        for item in data:
+            if isinstance(item, dict) and "name" in item:
+                concepts.append(
+                    {
+                        "name": item["name"],
+                        "sub_concepts": item.get("sub_concepts", []),
+                        "leaf_concepts": item.get("leaf_concepts", []),
+                        "raw": json.dumps(item),
+                    }
+                )
+        return concepts if concepts else None
+
     if not isinstance(data, dict):
         return None
 
-    concepts: list[dict[str, Any]] = []
+    # Format: {"core_concepts": [{...}]} (array-style)
+    if "core_concepts" in data and isinstance(data["core_concepts"], list):
+        concepts = []
+        for item in data["core_concepts"]:
+            if isinstance(item, dict) and "name" in item:
+                concepts.append(
+                    {
+                        "name": item["name"],
+                        "sub_concepts": item.get("sub_concepts", []),
+                        "leaf_concepts": item.get("leaf_concepts", []),
+                        "raw": json.dumps(item),
+                    }
+                )
+        return concepts if concepts else None
+
+    # Format: {"Concept Name": {"sub_concepts": [], "leaf_concepts": []}} (dict-style)
+    concepts = []
     for name, details in data.items():
         if not isinstance(details, dict):
             continue

@@ -90,8 +90,40 @@ async def get_progress(
     course_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Get student progress for a course."""
-    return await get_course_progress(session, student_id, course_id)
+    """Get student progress for a course, including all known concepts from S3 cache."""
+    from src.lib.content_generator import load_concepts_from_s3
+
+    db_progress = await get_course_progress(session, student_id, course_id)
+
+    cached = await load_concepts_from_s3(course_id)
+    if cached:
+        valid_names = {cc["name"] for cc in cached if cc.get("name")}
+
+        # Filter DB concepts to only known core concepts
+        db_progress["concepts"] = [
+            c for c in db_progress["concepts"] if c["core_concept"] in valid_names
+        ]
+
+        # Add missing concepts with zero mastery
+        existing_names = {c["core_concept"] for c in db_progress["concepts"]}
+        for cc in cached:
+            name = cc.get("name", "")
+            if name and name not in existing_names:
+                db_progress["concepts"].append({
+                    "core_concept": name,
+                    "mastery_score": 0.0,
+                    "mastery_sources": {},
+                    "manual_mastery": None,
+                    "quizzes_taken": 0,
+                    "quizzes_passed": 0,
+                    "exercises_completed": 0,
+                })
+
+        # Recompute overall from filtered concepts only
+        scores = [c["mastery_score"] for c in db_progress["concepts"]]
+        db_progress["overall_mastery"] = sum(scores) / len(scores) if scores else 0.0
+
+    return db_progress
 
 
 @router.post("/mastery")
@@ -110,6 +142,21 @@ async def set_mastery(
     return {"core_concept": body.core_concept, "mastery_score": new_score}
 
 
+@router.get("/concepts/{course_id}")
+async def list_concepts(course_id: str) -> list[str]:
+    """List available core concepts for a course (fast, reads from S3 cache)."""
+    from src.lib.content_generator import load_concepts_from_s3
+
+    cached = await load_concepts_from_s3(course_id)
+    if cached:
+        return [c["name"] for c in cached if c.get("name")]
+
+    quiz_objects = await list_objects(f"quizzes/course_{course_id}/")
+    return [
+        obj["key"].split("/")[-1].replace(".json", "").replace("-", " ") for obj in quiz_objects
+    ]
+
+
 @router.get("/summaries/{course_id}")
 async def list_summaries(course_id: str) -> list[dict[str, Any]]:
     """List available lecture summaries for a course."""
@@ -123,6 +170,99 @@ async def list_summaries(course_id: str) -> list[dict[str, Any]]:
         except Exception:
             continue
     return summaries
+
+
+@router.get("/exercise-concepts/{course_id}/{exercise_name}")
+async def get_exercise_concepts(course_id: str, exercise_name: str) -> dict[str, Any]:
+    """Get the core concepts tested by an exercise."""
+    from src.lib.memory import get_exercise_concept_map
+
+    return await get_exercise_concept_map(course_id, exercise_name)
+
+
+class MarkRequest(BaseModel):
+    """Request to mark a lecture reviewed or exercise done."""
+
+    student_id: str
+    course_id: str
+    item_title: str
+
+
+@router.post("/mark-lecture-reviewed")
+async def mark_lecture_reviewed(
+    body: MarkRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Mark a lecture as reviewed — bumps mastery for related concepts."""
+    from src.lib.memory import query_course_knowledge
+    from src.lib.quiz_serving import _update_concept_mastery
+
+    results = await query_course_knowledge(
+        body.course_id,
+        f"Which core concepts does the lecture '{body.item_title}' cover? "
+        f"List just the concept names.",
+    )
+
+    updated: dict[str, float] = {}
+    concept_names = _extract_concept_names(results)
+    for concept in concept_names:
+        new_score = await _update_concept_mastery(
+            session,
+            body.student_id,
+            body.course_id,
+            concept,
+            signal="lecture",
+            new_value=1.0,
+            coverage=0.3,
+        )
+        updated[concept] = new_score
+    await session.commit()
+    return {"concepts_updated": updated}
+
+
+@router.post("/mark-exercise-done")
+async def mark_exercise_done(
+    body: MarkRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Mark an exercise as done — bumps mastery for tested concepts."""
+    from src.lib.memory import get_exercise_concept_map
+    from src.lib.quiz_serving import _update_concept_mastery
+
+    mapping = await get_exercise_concept_map(body.course_id, body.item_title)
+    concept_names = _extract_concept_names(mapping.get("concept_mappings", []))
+
+    updated: dict[str, float] = {}
+    for concept in concept_names:
+        new_score = await _update_concept_mastery(
+            session,
+            body.student_id,
+            body.course_id,
+            concept,
+            signal="exercise",
+            new_value=1.0,
+            coverage=0.5,
+        )
+        updated[concept] = new_score
+    await session.commit()
+    return {"concepts_updated": updated}
+
+
+def _extract_concept_names(results: list[str]) -> list[str]:
+    """Extract concept names from Cognee search results."""
+    from src.lib.memory import _try_parse_concepts_json
+
+    names: list[str] = []
+    for r in results:
+        parsed = _try_parse_concepts_json(r)
+        if parsed:
+            names.extend(c["name"] for c in parsed)
+        else:
+            for part in r.replace(";", ",").split(","):
+                clean = part.strip().strip(".-•*")
+                if clean and 3 < len(clean) < 100:
+                    names.append(clean)
+    return list(dict.fromkeys(names))
 
 
 class ContentItem(BaseModel):

@@ -117,6 +117,39 @@ export function setManualMastery(
   })
 }
 
+export function listConcepts(courseId: string): Promise<string[]> {
+  return request(`/api/learning/concepts/${encodeURIComponent(courseId)}`)
+}
+
+export function markLectureReviewed(
+  studentId: string,
+  courseId: string,
+  itemTitle: string,
+): Promise<{ concepts_updated: Record<string, number> }> {
+  return request("/api/learning/mark-lecture-reviewed", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, item_title: itemTitle }),
+  })
+}
+
+export function markExerciseDone(
+  studentId: string,
+  courseId: string,
+  itemTitle: string,
+): Promise<{ concepts_updated: Record<string, number> }> {
+  return request("/api/learning/mark-exercise-done", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, item_title: itemTitle }),
+  })
+}
+
+export function getExerciseConcepts(
+  courseId: string,
+  exerciseName: string,
+): Promise<{ exercise: string; concept_mappings: string[] }> {
+  return request(`/api/learning/exercise-concepts/${encodeURIComponent(courseId)}/${encodeURIComponent(exerciseName)}`)
+}
+
 export interface QuizQuestion {
   id: string
   core_concept: string
