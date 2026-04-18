@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import cognee
 import structlog
 
 from src.config import get_settings
@@ -38,10 +37,13 @@ async def _search(query: str, dataset: str | None = None) -> list[str]:
     """Run a GRAPH_COMPLETION search and return result strings."""
     client = _get_client()
     try:
-        results = await client.search(
-            query_text=query,
-            query_type=client.SearchType.GRAPH_COMPLETION,
-        )
+        search_kwargs: dict[str, Any] = {
+            "query_text": query,
+            "query_type": client.SearchType.GRAPH_COMPLETION,
+        }
+        if dataset is not None:
+            search_kwargs["dataset"] = dataset
+        results = await client.search(**search_kwargs)
         texts: list[str] = []
         for r in results:
             text = str(r.search_result) if hasattr(r, "search_result") else str(r)
@@ -197,15 +199,14 @@ async def add_to_memory(
 
     url = f"{settings.cognee_api_url}/api/v1/add"
     headers = {"X-Api-Key": settings.cognee_api_key}
-    payload = {
-        "data": content,
-        "dataset_name": f"student_{user_id}",
-    }
-    if metadata:
-        payload["metadata"] = metadata  # type: ignore[assignment]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload, headers=headers)
+        resp = await client.post(
+            url,
+            data={"datasetName": f"student_{user_id}"},
+            files=[("data", ("content.txt", content.encode(), "text/plain"))],
+            headers=headers,
+        )
         resp.raise_for_status()
 
 
@@ -226,8 +227,9 @@ async def query_memory(
         List of matching documents with content and metadata.
     """
     logger.info("memory_query", user_id=user_id, query=query, top_k=top_k)
+    dataset = f"student_{user_id}"
     try:
-        results = await _search(query)
+        results = await _search(query, dataset=dataset)
         return [{"content": r, "source": "cognee"} for r in results[:top_k]]
     except CogneeRetrievalError:
         logger.warning("memory_query_fallback", user_id=user_id)

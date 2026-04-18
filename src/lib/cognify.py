@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import structlog
 
 from src.config import get_settings
-from src.exceptions import CogneeIngestionError
 
 logger = structlog.get_logger(__name__)
 
@@ -61,7 +61,7 @@ async def trigger_cognify(course_id: str) -> str:
     Returns:
         Job ID for status polling.
     """
-    job_id = f"cognify_{course_id}_{asyncio.get_event_loop().time():.0f}"
+    job_id = f"cognify_{course_id}_{uuid4().hex[:8]}"
     _jobs[job_id] = {
         "course_id": course_id,
         "status": CognifyStatus.PENDING,
@@ -112,7 +112,6 @@ async def _run_cognify(job_id: str, course_id: str) -> None:
         _jobs[job_id]["status"] = CognifyStatus.FAILED
         _jobs[job_id]["error"] = f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
         logger.error("cognify_failed", job_id=job_id, course_id=course_id, exc_info=True)
-        raise CogneeIngestionError(f"Cognify failed for {course_id}") from exc
     except Exception as exc:
         _jobs[job_id]["status"] = CognifyStatus.FAILED
         _jobs[job_id]["error"] = str(exc)[:200]

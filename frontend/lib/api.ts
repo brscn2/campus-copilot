@@ -58,8 +58,8 @@ export function listSyncedCourses(): Promise<{ courses: SyncedCourse[] }> {
 // --- Cognify ---
 
 export interface CognifyResult {
-  course_id: string
   job_id: string
+  status: string
 }
 
 export function triggerCognify(courseId: string): Promise<CognifyResult> {

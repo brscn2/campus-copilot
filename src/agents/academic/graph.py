@@ -13,20 +13,18 @@ from src.agents.academic.prompts import ACADEMIC_SYSTEM
 from src.agents.academic.state import AcademicState
 from src.agents.academic.tools import (
     book_room,
+    draft_thesis_email,
+    get_deadlines,
+    get_lecture_slides,
     get_prerequisites,
+    get_professor_contact,
     get_progress,
     list_course_uploads,
     list_moodle_courses,
     search_lectures,
     search_rooms,
-    take_quiz,
-    draft_thesis_email,
-    get_deadlines,
-    get_lecture_slides,
-    get_my_courses,
-    get_professor_contact,
-    search_rooms,
     search_thesis_opportunities,
+    take_quiz,
 )
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.bedrock import get_chat_model
@@ -43,12 +41,11 @@ TOOLS = [
     get_prerequisites,
     list_moodle_courses,
     list_course_uploads,
+    get_lecture_slides,
+    get_deadlines,
     search_thesis_opportunities,
     get_professor_contact,
     draft_thesis_email,
-    get_my_courses,
-    get_lecture_slides,
-    get_deadlines,
 ]
 
 
