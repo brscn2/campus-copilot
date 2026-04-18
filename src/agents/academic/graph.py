@@ -15,6 +15,8 @@ from src.agents.academic.tools import (
     book_room,
     get_prerequisites,
     get_progress,
+    list_course_uploads,
+    list_moodle_courses,
     search_lectures,
     search_rooms,
     take_quiz,
@@ -25,7 +27,16 @@ from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS = [search_rooms, book_room, search_lectures, get_progress, take_quiz, get_prerequisites]
+TOOLS = [
+    search_rooms,
+    book_room,
+    search_lectures,
+    get_progress,
+    take_quiz,
+    get_prerequisites,
+    list_moodle_courses,
+    list_course_uploads,
+]
 
 
 def _build_graph() -> StateGraph[AcademicState]:

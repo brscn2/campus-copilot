@@ -21,6 +21,7 @@ dependencies = [
     "cognee>=0.1.0",
     "cogwit-sdk>=0.1.0",
     "sse-starlette>=2.2.0",
+    "playwright>=1.49.0",
 ]
 
 [project.optional-dependencies]
@@ -63,7 +64,7 @@ strict = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["cognee.*", "cogwit_sdk.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*"]
+module = ["cognee.*", "cogwit_sdk.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*", "playwright.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

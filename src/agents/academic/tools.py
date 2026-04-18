@@ -11,6 +11,8 @@ from langchain_core.tools import tool
 
 from src.integrations.library import book_room as _book_room
 from src.integrations.library import search_rooms as _search_rooms
+from src.integrations.moodle import get_courses as _get_courses
+from src.integrations.moodle import get_uploads as _get_uploads
 from src.lib.memory import get_core_concepts as _get_core_concepts
 from src.lib.memory import get_prerequisites as _get_prerequisites
 from src.lib.memory import query_course_knowledge as _query_course_knowledge
@@ -145,3 +147,30 @@ async def get_prerequisites(
         topic: The topic to find prerequisites for.
     """
     return await _get_prerequisites(course_id, topic)
+
+
+@tool
+async def list_moodle_courses(
+    semester: str | None = None,
+) -> list[dict[str, Any]]:
+    """List the student's enrolled Moodle courses.
+
+    Scrapes the Moodle dashboard for active courses, optionally filtered
+    by semester. Each result includes the moodle_id, name, and URL.
+
+    Args:
+        semester: Optional semester filter value (e.g. '20252' for SS2025).
+    """
+    return await _get_courses(semester=semester)
+
+
+@tool
+async def list_course_uploads(
+    moodle_course_id: str,
+) -> list[dict[str, Any]]:
+    """List recent file uploads and resources for a Moodle course.
+
+    Args:
+        moodle_course_id: The Moodle course ID (numeric string).
+    """
+    return await _get_uploads(moodle_course_id)

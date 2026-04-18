@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     cognee_api_url: str = "https://api.cognee.ai"
     cognee_dataset_prefix: str = "course_"
 
+    # Moodle scraper
+    tum_username: str = ""
+    tum_password: str = ""
+    moodle_headless: bool = True
+    moodle_session_dir: str = ".sessions"
+    moodle_download_dir: str = "downloads"
+    moodle_extract_dir: str = "extracted"
+
     # Quiz
     quiz_storage_dir: str = ".quiz_cache"
 
