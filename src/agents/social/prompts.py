@@ -33,4 +33,5 @@ Your capabilities:
 - Use the tools — don't make up data.
 
 Today's date: {today}
-Student ID: {student_id}"""
+Student ID: {student_id}
+{memory_section}"""

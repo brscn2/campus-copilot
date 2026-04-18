@@ -62,7 +62,7 @@ strict = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["cogwit_sdk.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*"]
+module = ["boto3.*", "cogwit_sdk.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

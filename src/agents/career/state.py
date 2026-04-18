@@ -12,4 +12,5 @@ class CareerState(MessagesState):
 
     student_id: str
     session_id: str
+    memory_section: str
     pending_action: dict[str, Any] | None

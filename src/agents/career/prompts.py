@@ -27,4 +27,5 @@ Your capabilities:
 - If no results match, suggest broadening the search criteria.
 
 Today's date: {today}
-Student ID: {student_id}"""
+Student ID: {student_id}
+{memory_section}"""

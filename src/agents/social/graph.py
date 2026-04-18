@@ -40,6 +40,7 @@ def _build_graph() -> StateGraph[SocialState]:
         system_prompt = SOCIAL_SYSTEM.format(
             today=date.today().isoformat(),
             student_id=state["student_id"],
+            memory_section=state.get("memory_section", ""),
         )
         llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024, system=system_prompt)
         llm_with_tools = llm.bind_tools(TOOLS)
@@ -84,10 +85,18 @@ async def run(agent_input: AgentInput) -> AgentOutput:
         else:
             history_msgs.append(AIMessage(content=turn["content"]))
 
+    memory_items: list[str] = agent_input.context.get("memory", [])
+    memory_section = ""
+    if memory_items:
+        memory_section = "\n## What I Remember About You\n" + "\n".join(
+            f"- {item}" for item in memory_items
+        )
+
     initial_state = SocialState(
         messages=[*history_msgs, HumanMessage(content=agent_input.query)],  # type: ignore[list-item]
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        memory_section=memory_section,
         pending_action=None,
     )
 
