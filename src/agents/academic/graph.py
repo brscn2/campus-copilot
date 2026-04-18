@@ -14,6 +14,9 @@ from src.agents.academic.state import AcademicState
 from src.agents.academic.tools import (
     book_room,
     draft_thesis_email,
+    get_deadlines,
+    get_lecture_slides,
+    get_my_courses,
     get_professor_contact,
     search_rooms,
     search_thesis_opportunities,
@@ -30,6 +33,9 @@ TOOLS = [
     search_thesis_opportunities,
     get_professor_contact,
     draft_thesis_email,
+    get_my_courses,
+    get_lecture_slides,
+    get_deadlines,
 ]
 
 

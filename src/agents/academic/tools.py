@@ -11,6 +11,9 @@ from langchain_core.tools import tool
 
 from src.integrations.library import book_room as _book_room
 from src.integrations.library import search_rooms as _search_rooms
+from src.integrations.moodle import get_courses as _get_courses
+from src.integrations.moodle import get_deadlines as _get_deadlines
+from src.integrations.moodle import get_slides as _get_slides
 from src.integrations.tumonline import get_professor_info as _get_professor_info
 from src.integrations.tumonline import search_thesis_opportunities as _search_thesis
 
@@ -125,3 +128,37 @@ async def draft_thesis_email(
         "body": body,
         "status": "draft",
     }
+
+
+@tool
+async def get_my_courses(student_id: str) -> list[dict[str, Any]]:
+    """Get the student's enrolled Moodle courses.
+
+    Args:
+        student_id: The student identifier.
+    """
+    return await _get_courses(student_id=student_id)
+
+
+@tool
+async def get_lecture_slides(course_id: str) -> list[dict[str, Any]]:
+    """Get lecture slides for a course, including AI-generated summaries.
+
+    Args:
+        course_id: The Moodle course identifier from get_my_courses results.
+    """
+    return await _get_slides(course_id=course_id)
+
+
+@tool
+async def get_deadlines(
+    student_id: str,
+    course_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get upcoming deadlines for the student, optionally filtered by course.
+
+    Args:
+        student_id: The student identifier.
+        course_id: Optional course filter — omit to get all deadlines.
+    """
+    return await _get_deadlines(student_id=student_id, course_id=course_id)

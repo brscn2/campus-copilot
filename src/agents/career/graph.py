@@ -12,13 +12,13 @@ from langgraph.prebuilt import ToolNode
 from src.agents.base import AgentInput, AgentOutput
 from src.agents.career.prompts import CAREER_SYSTEM
 from src.agents.career.state import CareerState
-from src.agents.career.tools import search_jobs
+from src.agents.career.tools import audit_cv, search_jobs
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
-TOOLS = [search_jobs]
+TOOLS = [search_jobs, audit_cv]
 
 
 def _build_graph() -> StateGraph[CareerState]:
