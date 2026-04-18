@@ -13,7 +13,6 @@ from src.integrations.library import book_room as _book_room
 from src.integrations.library import search_rooms as _search_rooms
 from src.integrations.moodle import get_courses as _get_courses
 from src.integrations.moodle import get_deadlines as _get_deadlines
-from src.integrations.moodle import get_slides as _get_slides
 from src.integrations.moodle import get_uploads as _get_uploads
 from src.integrations.tumonline import get_professor_info as _get_professor_info
 from src.integrations.tumonline import search_thesis_opportunities as _search_thesis

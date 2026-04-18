@@ -21,3 +21,5 @@ class Job(BaseModel):
     reasoning: str = ""
     salary: str = ""
     posted: str = ""
+    description: str = ""
+    source_url: str = ""

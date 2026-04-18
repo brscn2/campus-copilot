@@ -86,6 +86,13 @@ class CalendarConflictError(CalendarError):
     """Proposed booking conflicts with an existing event."""
 
 
+# --- Jobs ---
+
+
+class JobSearchError(CampusCopilotError):
+    """Job search API call failed."""
+
+
 # --- Agent ---
 
 
