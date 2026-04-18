@@ -6,6 +6,7 @@ from typing import Any
 
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.logging import get_logger
+from src.lib.session_store import store as session_store
 from src.orchestrator.router import classify_intent
 
 logger = get_logger(__name__)
@@ -49,8 +50,11 @@ async def run_orchestrator(
     Returns:
         AgentOutput from the dispatched specialist agent.
     """
+    history = session_store.get_history(session_id)
     agent_name = await classify_intent(query)
-    logger.info("orchestrator_dispatch", agent=agent_name, session_id=session_id)
+    logger.info(
+        "orchestrator_dispatch", agent=agent_name, session_id=session_id, history_len=len(history)
+    )
 
     runner = _get_agent_runner(agent_name)
     if runner is None:
@@ -63,6 +67,16 @@ async def run_orchestrator(
         query=query,
         session_id=session_id,
         student_id=student_id,
+        history=history,
     )
     result: AgentOutput = await runner(agent_input)
+
+    session_store.append(
+        session_id,
+        [
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": result.message},
+        ],
+    )
+
     return result

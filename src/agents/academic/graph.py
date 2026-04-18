@@ -81,16 +81,24 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     Returns:
         AgentOutput with the response message and any proposed actions.
     """
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
     logger.info(
         "academic_agent_run",
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        history_len=len(agent_input.history),
     )
 
+    history_msgs: list[BaseMessage] = []
+    for turn in agent_input.history:
+        if turn["role"] == "user":
+            history_msgs.append(HumanMessage(content=turn["content"]))
+        else:
+            history_msgs.append(AIMessage(content=turn["content"]))
+
     initial_state = AcademicState(
-        messages=[HumanMessage(content=agent_input.query)],
+        messages=[*history_msgs, HumanMessage(content=agent_input.query)],  # type: ignore[list-item]
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
         pending_action=None,
