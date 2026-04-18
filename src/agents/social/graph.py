@@ -21,6 +21,7 @@ from src.agents.social.tools import (
 )
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
+from src.lib.message_hygiene import sanitize_tool_messages
 
 logger = get_logger(__name__)
 
@@ -40,10 +41,12 @@ def _build_graph() -> StateGraph[SocialState]:
         system_prompt = SOCIAL_SYSTEM.format(
             today=date.today().isoformat(),
             student_id=state["student_id"],
+            memory_section=state.get("memory_section", ""),
         )
         llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024, system=system_prompt)
         llm_with_tools = llm.bind_tools(TOOLS)
-        response = await llm_with_tools.ainvoke(state["messages"])
+        sanitized = sanitize_tool_messages(state["messages"])
+        response = await llm_with_tools.ainvoke(sanitized)
         return {"messages": [response]}
 
     def should_continue(state: SocialState) -> str:
@@ -68,18 +71,35 @@ _compiled_graph = _build_graph().compile()
 
 async def run(agent_input: AgentInput) -> AgentOutput:
     """Public entrypoint — run the Social agent graph."""
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
     logger.info(
         "social_agent_run",
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        history_len=len(agent_input.history),
     )
 
+    recent_history = agent_input.history[-10:]
+    history_msgs: list[BaseMessage] = []
+    for turn in recent_history:
+        if turn["role"] == "user":
+            history_msgs.append(HumanMessage(content=turn["content"]))
+        else:
+            history_msgs.append(AIMessage(content=turn["content"]))
+
+    memory_items: list[str] = agent_input.context.get("memory", [])
+    memory_section = ""
+    if memory_items:
+        memory_section = "\n## What I Remember About You\n" + "\n".join(
+            f"- {item}" for item in memory_items
+        )
+
     initial_state = SocialState(
-        messages=[HumanMessage(content=agent_input.query)],
+        messages=[*history_msgs, HumanMessage(content=agent_input.query)],  # type: ignore[list-item]
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        memory_section=memory_section,
         pending_action=None,
     )
 

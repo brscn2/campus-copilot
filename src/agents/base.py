@@ -16,6 +16,7 @@ class AgentInput(BaseModel):
     session_id: str
     student_id: str
     context: dict[str, Any] = {}
+    history: list[dict[str, str]] = []
 
 
 class AgentAction(BaseModel):

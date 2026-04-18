@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.logging import get_logger
+from src.lib.memory import query_memory
+from src.lib.memory_extractor import BATCH_SIZE, extract_and_remember
+from src.lib.session_store import store as session_store
 from src.orchestrator.router import classify_intent
 
 logger = get_logger(__name__)
@@ -49,8 +53,21 @@ async def run_orchestrator(
     Returns:
         AgentOutput from the dispatched specialist agent.
     """
+    history = session_store.get_history(session_id)
     agent_name = await classify_intent(query)
-    logger.info("orchestrator_dispatch", agent=agent_name, session_id=session_id)
+
+    memories = await query_memory(user_id=student_id, query=query, top_k=3)
+    memory_context: dict[str, Any] = {
+        "memory": [m["text"] for m in memories] if memories else [],
+    }
+
+    logger.info(
+        "orchestrator_dispatch",
+        agent=agent_name,
+        session_id=session_id,
+        history_len=len(history),
+        memory_count=len(memory_context["memory"]),
+    )
 
     runner = _get_agent_runner(agent_name)
     if runner is None:
@@ -63,6 +80,22 @@ async def run_orchestrator(
         query=query,
         session_id=session_id,
         student_id=student_id,
+        history=history,
+        context=memory_context,
     )
     result: AgentOutput = await runner(agent_input)
+
+    session_store.append(
+        session_id,
+        [
+            {"role": "user", "content": query},
+            {"role": "assistant", "content": result.message},
+        ],
+    )
+
+    history_after = session_store.get_history(session_id)
+    if len(history_after) >= BATCH_SIZE and len(history_after) % BATCH_SIZE == 0:
+        recent_turns = history_after[-BATCH_SIZE:]
+        asyncio.create_task(extract_and_remember(student_id=student_id, turns=recent_turns))
+
     return result
