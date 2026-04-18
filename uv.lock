@@ -6,6 +6,9 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
+[manifest]
+overrides = [{ name = "lancedb", marker = "platform_machine == 'arm64' or sys_platform != 'darwin'", specifier = ">=0.30.2" }]
+
 [[package]]
 name = "aiofiles"
 version = "25.1.0"
@@ -769,7 +772,7 @@ dependencies = [
     { name = "instructor" },
     { name = "jinja2" },
     { name = "kuzu" },
-    { name = "lancedb" },
+    { name = "lancedb", marker = "platform_machine == 'arm64' or sys_platform != 'darwin'" },
     { name = "langdetect" },
     { name = "limits" },
     { name = "litellm" },
