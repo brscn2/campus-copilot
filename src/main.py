@@ -38,8 +38,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with _engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("startup_db_connected", database=get_settings().database_url.split("@")[-1])
-    except Exception:
-        logger.warning("startup_db_unavailable", exc_info=True)
+    except Exception as exc:
+        logger.warning("startup_db_unavailable", reason=str(exc))
     yield
 
 
