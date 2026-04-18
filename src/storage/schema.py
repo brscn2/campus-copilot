@@ -144,3 +144,28 @@ class SessionRow(Base):
     turns: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list)
 
     student: Mapped[StudentRow] = relationship(back_populates="sessions")
+
+
+class StudentConceptProgressRow(Base):
+    """Tracks per-student mastery of core concepts within a course."""
+
+    __tablename__ = "student_concept_progress"
+
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"))
+    core_concept: Mapped[str] = mapped_column(String(500))
+    mastery_score: Mapped[float] = mapped_column(Float, default=0.0)
+    exercises_completed: Mapped[int] = mapped_column(Integer, default=0)
+    quizzes_taken: Mapped[int] = mapped_column(Integer, default=0)
+    quizzes_passed: Mapped[int] = mapped_column(Integer, default=0)
+    last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_student_course_concept",
+            "student_id",
+            "course_id",
+            "core_concept",
+            unique=True,
+        ),
+    )
