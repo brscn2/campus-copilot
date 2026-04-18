@@ -24,6 +24,10 @@ def _get_agent_runner(agent_name: str) -> Any:
             from src.agents.career.graph import run as career_run
 
             AGENT_RUNNERS["career"] = career_run
+        elif agent_name == "social":
+            from src.agents.social.graph import run as social_run
+
+            AGENT_RUNNERS["social"] = social_run
         else:
             AGENT_RUNNERS[agent_name] = None
     return AGENT_RUNNERS[agent_name]
