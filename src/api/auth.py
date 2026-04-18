@@ -16,14 +16,12 @@ import httpx
 from fastapi import APIRouter, Query
 from fastapi.responses import RedirectResponse
 
-from src.config import get_settings
+from src.config import DEMO_STUDENT_ID, get_settings
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
 
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",

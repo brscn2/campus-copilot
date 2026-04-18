@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from src.config import DEMO_STUDENT_ID
 from src.integrations.library import search_rooms
 from src.integrations.moodle import get_courses, get_deadlines, get_slides
 from src.integrations.tumonline import search_thesis_opportunities
@@ -27,7 +28,7 @@ async def list_slides(course_id: str) -> list[dict[str, Any]]:
 
 @router.get("/deadlines")
 async def list_deadlines(
-    student_id: str = "demo-student",
+    student_id: str = DEMO_STUDENT_ID,
     course_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """List upcoming deadlines."""

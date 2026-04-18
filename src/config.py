@@ -8,6 +8,9 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
+
+
 class Settings(BaseSettings):
     """Single source of truth for all configuration."""
 

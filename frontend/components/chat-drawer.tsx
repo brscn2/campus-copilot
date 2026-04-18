@@ -64,7 +64,7 @@ async function sendToBackend(
       body: JSON.stringify({
         message,
         session_id: "frontend-default",
-        student_id: "demo-student",
+        student_id: "00000000-0000-0000-0000-000000000001",
       }),
     })
 

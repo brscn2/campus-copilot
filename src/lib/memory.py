@@ -1,36 +1,16 @@
-"""Cognee Cloud memory layer — cogwit SDK for course queries, HTTP for student memory."""
+"""Cognee Cloud memory layer — uses the cognee SDK for all operations."""
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-import httpx
 import structlog
 
 from src.config import get_settings
 from src.exceptions import CogneeRetrievalError
-
-# cogwit_sdk reads COGWIT_API_BASE at import time — set before importing
-_boot_settings = get_settings()
-if _boot_settings.cognee_api_url:
-    os.environ["COGWIT_API_BASE"] = _boot_settings.cognee_api_url
+from src.lib.cognee_init import ensure_cognee
 
 logger = structlog.get_logger(__name__)
-
-_client: Any = None
-
-
-def _get_client() -> Any:
-    """Lazy-init the cogwit SDK client."""
-    global _client  # noqa: PLW0603
-    if _client is None:
-        settings = get_settings()
-        os.environ["COGWIT_API_BASE"] = settings.cognee_api_url
-        from cogwit_sdk import CogwitConfig, cogwit
-
-        _client = cogwit(CogwitConfig(api_key=settings.cognee_api_key))
-    return _client
 
 
 def _dataset_name(course_id: str) -> str:
@@ -40,69 +20,35 @@ def _dataset_name(course_id: str) -> str:
 
 
 async def _search(query: str, dataset: str | None = None) -> list[str]:
-    """Run a GRAPH_COMPLETION search and return result strings.
+    """Run a GRAPH_COMPLETION search via the Cognee SDK (V2 recall API)."""
+    await ensure_cognee()
+    import cognee
 
-    Uses the raw HTTP API when a dataset is specified (cogwit SDK doesn't
-    support dataset-scoped queries), falls back to cogwit SDK otherwise.
-    """
-    if dataset is not None:
-        return await _search_via_http(query, dataset)
-
-    client = _get_client()
     try:
-        search_kwargs: dict[str, Any] = {
-            "query_text": query,
-            "query_type": client.SearchType.GRAPH_COMPLETION,
-        }
-        if dataset is not None:
-            search_kwargs["dataset"] = dataset
-        results = await client.search(**search_kwargs)
+        results = await cognee.recall(
+            query_text=query,
+            query_type=cognee.SearchType.GRAPH_COMPLETION,
+            datasets=[dataset] if dataset else None,
+        )
         texts: list[str] = []
         for r in results:
-            text = str(r.search_result) if hasattr(r, "search_result") else str(r)
+            if isinstance(r, dict):
+                text = str(r.get("search_result", r.get("answer", r)))
+            elif hasattr(r, "search_result"):
+                text = str(r.search_result)
+            else:
+                text = str(r)
             if len(text) > 10:
                 texts.append(text)
         return texts
-    except Exception as exc:
+    except RuntimeError as exc:
+        if "prerequisites not met" in str(exc):
+            logger.info("cognee_search_empty_dataset", query=query, dataset=dataset)
+            return []
         logger.error("cognee_search_failed", query=query, exc_info=True)
         raise CogneeRetrievalError(f"Cognee search failed: {exc}") from exc
-
-
-async def _search_via_http(query: str, dataset: str) -> list[str]:
-    """Search Cognee via raw HTTP API with dataset scoping."""
-    import httpx
-
-    settings = get_settings()
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{settings.cognee_api_url}/api/v1/search",
-                json={
-                    "query": query,
-                    "search_type": "GRAPH_COMPLETION",
-                    "datasets": [dataset],
-                },
-                headers={"X-Api-Key": settings.cognee_api_key},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        texts: list[str] = []
-        if isinstance(data, list):
-            for item in data:
-                text = str(item.get("search_result", item)) if isinstance(item, dict) else str(item)
-                if len(text) > 10:
-                    texts.append(text)
-        elif isinstance(data, dict):
-            for value in data.values():
-                text = str(value)
-                if len(text) > 10:
-                    texts.append(text)
-
-        logger.info("cognee_http_search_done", dataset=dataset, results=len(texts))
-        return texts
     except Exception as exc:
-        logger.error("cognee_http_search_failed", query=query, dataset=dataset, exc_info=True)
+        logger.error("cognee_search_failed", query=query, exc_info=True)
         raise CogneeRetrievalError(f"Cognee search failed: {exc}") from exc
 
 
@@ -166,8 +112,6 @@ def _try_parse_concepts_json(raw: str) -> list[dict[str, Any]] | None:
 
     text = raw.strip()
 
-    # Cognee wraps responses in Python list repr: ['{ json }']
-    # Try ast.literal_eval first to unwrap cleanly
     if text.startswith("[") and text.endswith("]"):
         try:
             parsed_list = ast.literal_eval(text)
@@ -290,27 +234,19 @@ async def add_to_memory(
     content: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Ingest content into the knowledge graph via Cognee API.
+    """Ingest content into the knowledge graph via Cognee SDK.
 
     Args:
         user_id: Student identifier for namespace isolation.
         content: Text content to ingest.
         metadata: Optional metadata to attach.
     """
-    settings = get_settings()
+    await ensure_cognee()
+    import cognee
+
+    dataset = f"student_{user_id}"
     logger.info("memory_add", user_id=user_id, content_length=len(content))
-
-    url = f"{settings.cognee_api_url}/api/v1/add"
-    headers = {"X-Api-Key": settings.cognee_api_key}
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            url,
-            data={"datasetName": f"student_{user_id}"},
-            files=[("data", ("content.txt", content.encode(), "text/plain"))],
-            headers=headers,
-        )
-        resp.raise_for_status()
+    await cognee.remember(data=content, dataset_name=dataset)
 
 
 async def query_memory(
@@ -320,9 +256,6 @@ async def query_memory(
     top_k: int = 3,
 ) -> list[dict[str, Any]]:
     """Query the knowledge graph for relevant student context.
-
-    Uses the HTTP API with dataset scoping so results are isolated to this
-    student's memory, not the entire tenant.
 
     Args:
         user_id: Student identifier for namespace isolation.

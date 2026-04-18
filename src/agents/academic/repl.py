@@ -9,6 +9,7 @@ import asyncio
 
 from src.agents.academic.graph import run
 from src.agents.base import AgentInput
+from src.config import DEMO_STUDENT_ID
 
 
 async def main() -> None:
@@ -21,7 +22,7 @@ async def main() -> None:
         agent_input = AgentInput(
             query=query,
             session_id="repl",
-            student_id="demo-student",
+            student_id=DEMO_STUDENT_ID,
         )
         output = await run(agent_input)
         print(f"\n[academic] {output.message}")

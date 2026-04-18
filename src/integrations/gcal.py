@@ -12,12 +12,12 @@ from typing import Any
 
 import structlog
 
-from src.config import get_settings
+from src.config import DEMO_STUDENT_ID, get_settings
 from src.models.calendar_event import CalendarEvent
 
 logger = structlog.get_logger(__name__)
 
-DEMO_STUDENT = "00000000-0000-0000-0000-000000000001"
+DEMO_STUDENT = DEMO_STUDENT_ID
 
 # ---------------------------------------------------------------------------
 # Agent-type inference from event titles

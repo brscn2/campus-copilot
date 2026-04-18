@@ -501,16 +501,3 @@ async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
         await pw.stop()
 
 
-async def get_slides(course_id: str) -> list[dict[str, Any]]:
-    """Get lecture slides for a course. Stub — not yet implemented."""
-    logger.warning("get_slides_not_implemented", course_id=course_id)
-    return []
-
-
-async def get_deadlines(
-    student_id: str = "",
-    course_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """Get upcoming deadlines. Stub — not yet implemented."""
-    logger.warning("get_deadlines_not_implemented", student_id=student_id, course_id=course_id)
-    return []

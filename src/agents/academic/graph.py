@@ -47,7 +47,6 @@ TOOLS = [
     search_thesis_opportunities,
     get_professor_contact,
     draft_thesis_email,
-    get_deadlines,
 ]
 
 

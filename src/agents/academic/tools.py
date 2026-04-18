@@ -167,6 +167,18 @@ async def take_quiz(
 
 
 @tool
+async def get_lecture_slides(
+    course_id: str,
+) -> list[dict[str, Any]]:
+    """Get lecture slide decks for a Moodle course.
+
+    Args:
+        course_id: The Moodle course identifier (numeric string).
+    """
+    return await _get_slides(course_id=course_id)
+
+
+@tool
 async def search_thesis_opportunities(
     keywords: list[str] | None = None,
     chair: str | None = None,

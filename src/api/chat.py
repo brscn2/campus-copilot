@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from src.config import DEMO_STUDENT_ID
 from src.lib.logging import get_logger
 from src.lib.sse import format_sse_event
 
@@ -24,7 +25,7 @@ class ChatRequest(BaseModel):
 
     message: str
     session_id: str = "default"
-    student_id: str = "demo-student"
+    student_id: str = DEMO_STUDENT_ID
 
 
 @router.post("/chat")

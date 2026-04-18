@@ -4,55 +4,39 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
 
-from src.lib.cognify import STUDENT_COGNIFY_PROMPT, trigger_student_cognify
+from src.lib.cognify import trigger_student_cognify
+
+
+@pytest.fixture(autouse=True)
+def _skip_cognee_init() -> None:  # type: ignore[misc]
+    """Prevent real Cognee Cloud connection in tests."""
+    with patch("src.lib.cognify.ensure_cognee", new_callable=AsyncMock):
+        yield
 
 
 @pytest.mark.asyncio
-async def test_trigger_student_cognify_posts_correct_payload() -> None:
-    mock_response = httpx.Response(200, json={"status": "ok"})
-    mock_post = AsyncMock(return_value=mock_response)
-
-    with patch("src.lib.cognify.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.post = mock_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client_cls.return_value = mock_client
-
+async def test_trigger_student_cognify_sends_correct_params() -> None:
+    with patch("cognee.improve", new_callable=AsyncMock) as mock_improve:
         await trigger_student_cognify("stu-42")
 
-    mock_post.assert_called_once()
-    call_kwargs = mock_post.call_args[1]
-    assert call_kwargs["json"]["datasets"] == ["student_stu-42"]
-    assert call_kwargs["json"]["customPrompt"] == STUDENT_COGNIFY_PROMPT
-    assert "X-Api-Key" in call_kwargs["headers"]
+    mock_improve.assert_called_once()
+    call_kwargs = mock_improve.call_args[1]
+    assert call_kwargs["dataset"] == "student_stu-42"
 
 
 @pytest.mark.asyncio
-async def test_trigger_student_cognify_swallows_http_errors() -> None:
-    mock_response = httpx.Response(500, text="Internal Server Error")
-    mock_post = AsyncMock(return_value=mock_response)
-
-    with patch("src.lib.cognify.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.post = mock_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client_cls.return_value = mock_client
-
+async def test_trigger_student_cognify_swallows_sdk_errors() -> None:
+    with patch("cognee.improve", new_callable=AsyncMock, side_effect=Exception("Cognee down")):
         await trigger_student_cognify("stu-42")
 
 
 @pytest.mark.asyncio
 async def test_trigger_student_cognify_swallows_connection_errors() -> None:
-    with patch("src.lib.cognify.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client_cls.return_value = mock_client
-
+    with patch(
+        "cognee.improve",
+        new_callable=AsyncMock,
+        side_effect=ConnectionError("connection refused"),
+    ):
         await trigger_student_cognify("stu-42")

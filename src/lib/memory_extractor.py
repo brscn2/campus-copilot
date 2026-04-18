@@ -32,6 +32,29 @@ Conversation:
 {conversation}"""
 
 
+def _parse_json_array(raw: str) -> list[str]:
+    """Extract the last non-empty JSON array from an LLM response.
+
+    LLMs sometimes output multiple JSON blocks (e.g. `[]\\n\\nWait...\\n\\n["fact"]`).
+    We scan for all bracket-delimited JSON arrays and return the last non-empty one.
+    """
+    import re
+
+    candidates: list[list[str]] = []
+    for match in re.finditer(r"\[.*?\]", raw, re.DOTALL):
+        try:
+            parsed = json.loads(match.group())
+            if isinstance(parsed, list):
+                candidates.append(parsed)
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    for candidate in reversed(candidates):
+        if candidate:
+            return candidate
+    return candidates[0] if candidates else []
+
+
 async def extract_and_remember(
     *,
     student_id: str,
@@ -58,7 +81,7 @@ async def extract_and_remember(
         if not raw:
             logger.info("memory_extract_empty_response", student_id=student_id)
             return
-        facts: list[str] = json.loads(raw)
+        facts: list[str] = _parse_json_array(raw)
 
         if not facts:
             logger.info("memory_extract_nothing_notable", student_id=student_id)
