@@ -198,6 +198,8 @@ export function submitFlashcards(
     method: "POST",
     body: JSON.stringify({ student_id: studentId, course_id: courseId, ratings }),
   })
+}
+
 // --- Calendar ---
 
 export interface CalendarEventData {
