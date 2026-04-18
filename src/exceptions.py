@@ -52,6 +52,17 @@ class CogneeIngestionError(CogneeError):
     """Failed to ingest data into the knowledge graph."""
 
 
+# --- S3 / Storage ---
+
+
+class S3Error(CampusCopilotError):
+    """Base for S3 storage failures."""
+
+
+class S3UploadError(S3Error):
+    """Failed to upload a file to S3."""
+
+
 # --- Calendar ---
 
 
