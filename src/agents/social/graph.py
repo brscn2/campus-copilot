@@ -21,6 +21,7 @@ from src.agents.social.tools import (
 )
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
+from src.lib.message_hygiene import sanitize_tool_messages
 
 logger = get_logger(__name__)
 
@@ -44,7 +45,8 @@ def _build_graph() -> StateGraph[SocialState]:
         )
         llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024, system=system_prompt)
         llm_with_tools = llm.bind_tools(TOOLS)
-        response = await llm_with_tools.ainvoke(state["messages"])
+        sanitized = sanitize_tool_messages(state["messages"])
+        response = await llm_with_tools.ainvoke(sanitized)
         return {"messages": [response]}
 
     def should_continue(state: SocialState) -> str:
