@@ -18,6 +18,7 @@ from src.exceptions import (
     AgentError,
     BedrockRateLimitError,
     CalendarConflictError,
+    CalendarNotConnectedError,
     CampusCopilotError,
     CogneeError,
     TUMSystemUnavailableError,
@@ -83,6 +84,12 @@ def _register_exception_handlers(application: FastAPI) -> None:
         logger.error("tum_system_unavailable", path=request.url.path, exc_info=True)
         return JSONResponse(status_code=502, content={"detail": "TUM system unavailable"})
 
+    @application.exception_handler(CalendarNotConnectedError)
+    async def _calendar_not_connected(
+        request: Request, exc: CalendarNotConnectedError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
     @application.exception_handler(CalendarConflictError)
     async def _calendar_conflict(request: Request, exc: CalendarConflictError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc)})
@@ -106,6 +113,8 @@ def _register_exception_handlers(application: FastAPI) -> None:
 def _register_routes(application: FastAPI) -> None:
     """Register all API routers."""
     from src.api.academic import router as academic_router
+    from src.api.auth import router as auth_router
+    from src.api.calendar import router as calendar_router
     from src.api.career import router as career_router
     from src.api.chat import router as chat_router
     from src.api.cognify import router as cognify_router
@@ -122,6 +131,10 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(cognify_router)
     application.include_router(pipeline_router)
     application.include_router(quiz_router, prefix="/api")
+    application.include_router(auth_router, prefix="/api")
+    application.include_router(calendar_router, prefix="/api")
+    application.include_router(cognify_router)
+    application.include_router(pipeline_router)
 
 
 app = create_app()

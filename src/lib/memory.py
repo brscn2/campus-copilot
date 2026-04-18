@@ -49,10 +49,13 @@ async def _search(query: str, dataset: str | None = None) -> list[str]:
 
     client = _get_client()
     try:
-        results = await client.search(
-            query_text=query,
-            query_type=client.SearchType.GRAPH_COMPLETION,
-        )
+        search_kwargs: dict[str, Any] = {
+            "query_text": query,
+            "query_type": client.SearchType.GRAPH_COMPLETION,
+        }
+        if dataset is not None:
+            search_kwargs["dataset"] = dataset
+        results = await client.search(**search_kwargs)
         texts: list[str] = []
         for r in results:
             text = str(r.search_result) if hasattr(r, "search_result") else str(r)

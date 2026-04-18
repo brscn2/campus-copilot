@@ -198,4 +198,44 @@ export function submitFlashcards(
     method: "POST",
     body: JSON.stringify({ student_id: studentId, course_id: courseId, ratings }),
   })
+// --- Calendar ---
+
+export interface CalendarEventData {
+  id: string | number
+  title: string
+  day: number
+  start: number
+  end: number
+  agent: "academic" | "career" | "social" | null
+  location: string
+  conflict?: boolean
+  google_event_id?: string | null
+}
+
+export function listCalendarEvents(weekOffset?: number): Promise<{ events: CalendarEventData[] }> {
+  const params = weekOffset !== undefined ? `?week_offset=${weekOffset}` : ""
+  return request(`/api/calendar/events${params}`)
+}
+
+export function createCalendarEvent(event: {
+  title: string
+  starts_at: string
+  ends_at: string
+  location?: string
+  agent?: string
+}): Promise<CalendarEventData> {
+  return request("/api/calendar/events", {
+    method: "POST",
+    body: JSON.stringify(event),
+  })
+}
+
+export function deleteCalendarEvent(eventId: string): Promise<void> {
+  return request(`/api/calendar/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  })
+}
+
+export function getCalendarStatus(): Promise<{ connected: boolean }> {
+  return request("/api/calendar/status")
 }

@@ -434,6 +434,108 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   )
 }
 
+function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; onClose: () => void }) {
+  const [files, setFiles] = React.useState<CourseFile[]>([])
+  const [filesLoading, setFilesLoading] = React.useState(false)
+
+  React.useEffect(() => {
+    if (course) {
+      setFilesLoading(true)
+      listCourseFiles(course.dataset_name)
+        .then((res) => setFiles(res.files))
+        .catch(() => setFiles([]))
+        .finally(() => setFilesLoading(false))
+    } else {
+      setFiles([])
+    }
+  }, [course])
+
+  let mastery = 0
+  if (course) {
+    let hash = 0
+    for (let i = 0; i < course.dataset_name.length; i++) hash = ((hash << 5) - hash + course.dataset_name.charCodeAt(i)) | 0
+    mastery = 30 + (Math.abs(hash) % 55)
+  }
+
+  return (
+    <Dialog open={!!course} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        {course ? (
+          <>
+            <DialogHeader>
+              {course.course_code && (
+                <div className="font-mono text-xs text-primary">{course.course_code}</div>
+              )}
+              <DialogTitle className="text-xl">{course.display_name}</DialogTitle>
+              <DialogDescription>
+                {course.semester} · {course.pdf_count} PDFs synced from Moodle
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
+              <div>
+                <div className="text-xs text-muted-foreground">Mastery</div>
+                <div className="text-lg font-semibold tabular-nums">{mastery}%</div>
+              </div>
+              <Progress value={mastery} className="h-2 w-32" />
+            </div>
+
+            {filesLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading files…
+              </div>
+            )}
+
+            {files.length > 0 && (
+              <div>
+                <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
+                <div className="flex flex-col gap-1.5">
+                  {files.map((f) => {
+                    const filename = f.key.split("/").pop() ?? f.key
+                    return (
+                      <div
+                        key={f.key}
+                        className="flex items-center justify-between rounded-lg border border-border p-2.5"
+                      >
+                        <div className="flex items-center gap-2 text-sm">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          <span>{filename}</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({(f.size / 1024).toFixed(0)} KB)
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1.5"
+                          onClick={async () => {
+                            const res = await getFileUrl(course.dataset_name, filename)
+                            window.open(res.url, "_blank")
+                          }}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Download
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!filesLoading && files.length === 0 && (
+              <div className="text-sm text-muted-foreground">
+                No files uploaded yet. Run the Moodle sync to pull lecture slides.
+              </div>
+            )}
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function CourseDetailDialog({ course, onClose }: { course: Course | null; onClose: () => void }) {
   const [quizOpen, setQuizOpen] = React.useState(false)
   const [reviewed, setReviewed] = React.useState<Record<number, boolean>>({})
