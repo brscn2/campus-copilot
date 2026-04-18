@@ -80,6 +80,124 @@ export function getCognifyStatus(jobId: string): Promise<JobStatus> {
   return request(`/api/cognify/status/${encodeURIComponent(jobId)}`)
 }
 
+// --- Learning (quiz, flashcards, progress) ---
+
+export interface QuizQuestion {
+  id: string
+  core_concept: string
+  leaf_concepts: string[]
+  question: string
+  options: string[]
+  difficulty: string
+  correct?: string
+  explanation?: string
+}
+
+export interface QuizSession {
+  course_id: string
+  core_concepts: string[]
+  questions: QuizQuestion[]
+  total_available: number
+}
+
+export function requestQuiz(
+  studentId: string,
+  courseId: string,
+  numQuestions: number = 10,
+  coreConcepts: string[] = [],
+): Promise<QuizSession> {
+  return request("/api/learning/quiz", {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: studentId,
+      course_id: courseId,
+      num_questions: numQuestions,
+      core_concepts: coreConcepts,
+    }),
+  })
+}
+
+export interface FlashcardItem {
+  id: string
+  core_concept: string
+  leaf_concepts: string[]
+  front: string
+  back: string
+  difficulty: string
+}
+
+export interface FlashcardSession {
+  course_id: string
+  core_concepts: string[]
+  cards: FlashcardItem[]
+  total_available: number
+}
+
+export interface CourseProgress {
+  course_id: string
+  overall_mastery: number
+  concepts: {
+    core_concept: string
+    mastery_score: number
+    quizzes_taken: number
+    quizzes_passed: number
+  }[]
+}
+
+export function getCourseProgress(studentId: string, courseId: string): Promise<CourseProgress> {
+  return request(`/api/learning/progress/${encodeURIComponent(studentId)}/${encodeURIComponent(courseId)}`)
+}
+
+export function requestFlashcards(
+  studentId: string,
+  courseId: string,
+  numCards: number = 15,
+  coreConcepts: string[] = [],
+): Promise<FlashcardSession> {
+  return request("/api/learning/flashcards", {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: studentId,
+      course_id: courseId,
+      num_cards: numCards,
+      core_concepts: coreConcepts,
+    }),
+  })
+}
+
+export interface QuizScoreResult {
+  score: number
+  total: number
+  correct: number
+  per_concept: Record<string, number>
+  mastery_updates: Record<string, number>
+}
+
+export function submitQuiz(
+  studentId: string,
+  courseId: string,
+  answers: { question_id: string; selected: string }[],
+): Promise<QuizScoreResult> {
+  return request("/api/learning/quiz/submit", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, answers }),
+  })
+}
+
+export interface FlashcardScoreResult {
+  per_concept: Record<string, number>
+  mastery_updates: Record<string, number>
+}
+
+export function submitFlashcards(
+  studentId: string,
+  courseId: string,
+  ratings: { card_id: string; rating: string }[],
+): Promise<FlashcardScoreResult> {
+  return request("/api/learning/flashcards/submit", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, ratings }),
+  })
 // --- Calendar ---
 
 export interface CalendarEventData {

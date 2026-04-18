@@ -52,6 +52,14 @@ class CogneeIngestionError(CogneeError):
     """Failed to ingest data into the knowledge graph."""
 
 
+class ContentGenerationError(CogneeError):
+    """Failed to generate learning content from the knowledge graph."""
+
+
+class QuizNotFoundError(CampusCopilotError):
+    """Requested quiz content not found on S3."""
+
+
 # --- S3 / Storage ---
 
 

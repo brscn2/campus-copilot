@@ -39,7 +39,14 @@ def _dataset_name(course_id: str) -> str:
 
 
 async def _search(query: str, dataset: str | None = None) -> list[str]:
-    """Run a GRAPH_COMPLETION search and return result strings."""
+    """Run a GRAPH_COMPLETION search and return result strings.
+
+    Uses the raw HTTP API when a dataset is specified (cogwit SDK doesn't
+    support dataset-scoped queries), falls back to cogwit SDK otherwise.
+    """
+    if dataset is not None:
+        return await _search_via_http(query, dataset)
+
     client = _get_client()
     try:
         search_kwargs: dict[str, Any] = {
@@ -57,6 +64,44 @@ async def _search(query: str, dataset: str | None = None) -> list[str]:
         return texts
     except Exception as exc:
         logger.error("cognee_search_failed", query=query, exc_info=True)
+        raise CogneeRetrievalError(f"Cognee search failed: {exc}") from exc
+
+
+async def _search_via_http(query: str, dataset: str) -> list[str]:
+    """Search Cognee via raw HTTP API with dataset scoping."""
+    import httpx
+
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{settings.cognee_api_url}/api/v1/search",
+                json={
+                    "query": query,
+                    "search_type": "GRAPH_COMPLETION",
+                    "datasets": [dataset],
+                },
+                headers={"X-Api-Key": settings.cognee_api_key},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        texts: list[str] = []
+        if isinstance(data, list):
+            for item in data:
+                text = str(item.get("search_result", item)) if isinstance(item, dict) else str(item)
+                if len(text) > 10:
+                    texts.append(text)
+        elif isinstance(data, dict):
+            for value in data.values():
+                text = str(value)
+                if len(text) > 10:
+                    texts.append(text)
+
+        logger.info("cognee_http_search_done", dataset=dataset, results=len(texts))
+        return texts
+    except Exception as exc:
+        logger.error("cognee_http_search_failed", query=query, dataset=dataset, exc_info=True)
         raise CogneeRetrievalError(f"Cognee search failed: {exc}") from exc
 
 
@@ -92,13 +137,67 @@ async def get_core_concepts(course_id: str) -> list[dict[str, Any]]:
     query = (
         "List all core concepts in this knowledge graph. "
         "For each core concept, list its sub-concepts and leaf concepts. "
-        "Return as a structured hierarchy."
+        "Return as a structured JSON hierarchy."
     )
     results = await _search(query, dataset)
     concepts: list[dict[str, Any]] = []
+
     for r in results:
-        concepts.append({"name": r[:200], "raw": r})
+        parsed = _try_parse_concepts_json(r)
+        if parsed:
+            concepts.extend(parsed)
+        else:
+            concepts.append({"name": r[:200], "sub_concepts": [], "leaf_concepts": [], "raw": r})
+
+    logger.info("cognee_concepts_parsed", course_id=course_id, count=len(concepts))
     return concepts
+
+
+def _try_parse_concepts_json(raw: str) -> list[dict[str, Any]] | None:
+    """Try to parse a Cognee GRAPH_COMPLETION response as structured concept JSON.
+
+    Cognee returns concept hierarchies wrapped in Python list repr like:
+      ['{"Concept A": {"sub_concepts": [...], "leaf_concepts": [...]}}']
+    This function unwraps and splits that into individual concept dicts.
+    """
+    import ast
+    import json
+
+    text = raw.strip()
+
+    # Cognee wraps responses in Python list repr: ['{ json }']
+    # Try ast.literal_eval first to unwrap cleanly
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed_list = ast.literal_eval(text)
+            if isinstance(parsed_list, list) and parsed_list:
+                text = str(parsed_list[0])
+        except (ValueError, SyntaxError):
+            text = text[1:-1].strip()
+            if text.startswith("'") and text.endswith("'"):
+                text = text[1:-1]
+
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    concepts: list[dict[str, Any]] = []
+    for name, details in data.items():
+        if not isinstance(details, dict):
+            continue
+        concepts.append(
+            {
+                "name": name,
+                "sub_concepts": details.get("sub_concepts", []),
+                "leaf_concepts": details.get("leaf_concepts", []),
+                "raw": json.dumps({name: details}),
+            }
+        )
+    return concepts if concepts else None
 
 
 async def get_exercise_concept_map(
