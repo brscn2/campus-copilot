@@ -18,8 +18,8 @@ dependencies = [
     "httpx>=0.28.0",
     "structlog>=24.4.0",
     "tenacity>=9.0.0",
-    "cognee>=0.1.0",
     "sse-starlette>=2.2.0",
+    "cogwit-sdk>=0.1.7",
 ]
 
 [project.optional-dependencies]
@@ -62,7 +62,7 @@ strict = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-module = ["cognee.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*"]
+module = ["cogwit_sdk.*", "langgraph.*", "langchain_core.*", "langchain_aws.*", "sse_starlette.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -33,15 +33,8 @@ class Settings(BaseSettings):
     bedrock_haiku_model_id: str = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
     bedrock_titan_embed_model_id: str = "amazon.titan-embed-text-v2:0"
 
-    # Cognee
+    # Cognee Cloud
     cognee_api_key: str = ""
-    cognee_api_url: str = "https://api.cognee.ai"
-    cognee_tenant_id: str = ""
-    cognee_llm_provider: str = "bedrock"
-    cognee_llm_model: str = "bedrock/eu.anthropic.claude-sonnet-4-6-20250514-v1:0"
-    cognee_embedding_provider: str = "bedrock"
-    cognee_embedding_model: str = "bedrock/amazon.titan-embed-text-v2:0"
-    cognee_embedding_dimensions: int = 1024
 
     # Google Calendar
     google_oauth_client_id: str = ""

@@ -1,51 +1,28 @@
-"""Cognee memory layer — knowledge graph for cross-session retrieval."""
+"""Cognee Cloud memory layer — knowledge graph for cross-session retrieval."""
 
 from __future__ import annotations
 
 from typing import Any
 
-import cognee
 import structlog
+from cogwit_sdk import CogwitConfig, SearchType, cogwit
 
 from src.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
-_initialized = False
+_client: cogwit | None = None
 
 
-async def _ensure_init() -> None:
-    """One-time Cognee config from env vars."""
-    global _initialized
-    if _initialized:
-        return
-
-    settings = get_settings()
-
-    cognee.config.set_llm_config(
-        {
-            "llm_api_key": settings.cognee_api_key or settings.aws_access_key_id,
-            "llm_provider": settings.cognee_llm_provider,
-            "llm_model": settings.cognee_llm_model,
-        }
-    )
-
-    cognee.config.set_embedding_config(
-        {
-            "embedding_provider": settings.cognee_embedding_provider,
-            "embedding_model": settings.cognee_embedding_model,
-            "embedding_dimensions": settings.cognee_embedding_dimensions,
-            "embedding_api_key": settings.cognee_api_key or settings.aws_access_key_id,
-        }
-    )
-
-    logger.info(
-        "cognee_initialized",
-        llm_provider=settings.cognee_llm_provider,
-        llm_model=settings.cognee_llm_model,
-        embedding_provider=settings.cognee_embedding_provider,
-    )
-    _initialized = True
+def _get_client() -> cogwit | None:
+    """Lazy-init the Cognee Cloud client."""
+    global _client
+    if _client is None:
+        settings = get_settings()
+        if not settings.cognee_api_key:
+            return None
+        _client = cogwit(CogwitConfig(api_key=settings.cognee_api_key))
+    return _client
 
 
 async def add_to_memory(
@@ -54,18 +31,16 @@ async def add_to_memory(
     content: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Ingest content into Cognee knowledge graph.
-
-    Args:
-        user_id: Student identifier for namespace isolation.
-        content: Text content to ingest.
-        metadata: Optional metadata to attach.
-    """
+    """Ingest content into Cognee Cloud knowledge graph."""
+    client = _get_client()
+    if client is None:
+        return
     try:
-        await _ensure_init()
         dataset_name = f"student_{user_id}"
         logger.info("memory_add", user_id=user_id, content_length=len(content))
-        await cognee.remember(content, dataset_name=dataset_name)
+        response = await client.add(data=content, dataset_name=dataset_name)
+        if hasattr(response, "dataset_id"):
+            await client.cognify(datasets=[dataset_name])
     except Exception:
         logger.warning("memory_add_failed", user_id=user_id, exc_info=True)
 
@@ -74,48 +49,27 @@ async def query_memory(
     *,
     user_id: str,
     query: str,
-    top_k: int = 5,
+    top_k: int = 3,
 ) -> list[dict[str, Any]]:
-    """Query Cognee knowledge graph for relevant context.
-
-    Args:
-        user_id: Student identifier for namespace isolation.
-        query: Natural language query.
-        top_k: Number of results to return.
-
-    Returns:
-        List of matching documents with content and metadata.
-    """
+    """Query Cognee Cloud knowledge graph for relevant context."""
+    client = _get_client()
+    if client is None:
+        return []
     try:
-        await _ensure_init()
-        logger.info("memory_query", user_id=user_id, query=query, top_k=top_k)
-        results = await cognee.recall(
-            query,
-            datasets=[f"student_{user_id}"],
-            top_k=top_k,
+        logger.info("memory_query", user_id=user_id, query=query)
+        response = await client.search(
+            query_text=query,
+            query_type=SearchType.GRAPH_COMPLETION,
         )
-        return [
-            {"text": str(r.get("text", r)), "score": r.get("score", 0.0)}
-            if isinstance(r, dict)
-            else {"text": str(r), "score": 0.0}
-            for r in results
-        ]
+        if isinstance(response, list):
+            results: list[dict[str, Any]] = []
+            for r in response[:top_k]:
+                text = str(r.search_result) if hasattr(r, "search_result") else str(r)
+                results.append({"text": text})
+            return results
+        if hasattr(response, "result") and response.result:
+            return [{"text": str(response.result)}]
+        return []
     except Exception:
         logger.warning("memory_query_failed", user_id=user_id, exc_info=True)
         return []
-
-
-async def forget_memory(*, user_id: str, dataset_name: str | None = None) -> None:
-    """Delete data from Cognee knowledge graph.
-
-    Args:
-        user_id: Student identifier for namespace isolation.
-        dataset_name: Specific dataset to delete. Defaults to the user's dataset.
-    """
-    try:
-        await _ensure_init()
-        target = dataset_name or f"student_{user_id}"
-        logger.info("memory_forget", user_id=user_id, dataset=target)
-        await cognee.forget(dataset=target)
-    except Exception:
-        logger.warning("memory_forget_failed", user_id=user_id, exc_info=True)
