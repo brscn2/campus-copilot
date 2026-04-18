@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
+
 from fastapi import FastAPI, Request
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from src.config import get_settings
 from src.exceptions import (
@@ -21,12 +28,27 @@ setup_logging(json_output=get_settings().environment == "production")
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Application lifespan — verify DB connectivity on startup."""
+    try:
+        from src.storage.db import _engine
+
+        async with _engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("startup_db_connected", database=get_settings().database_url.split("@")[-1])
+    except Exception:
+        logger.warning("startup_db_unavailable", exc_info=True)
+    yield
+
+
 def create_app() -> FastAPI:
     """Build and return the FastAPI application."""
     application = FastAPI(
         title="Campus Co-Pilot",
         version="0.1.0",
         description="Multi-agent AI backend for TUM students",
+        lifespan=lifespan,
     )
 
     settings = get_settings()
