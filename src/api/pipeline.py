@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+# ruff: noqa: B008
 import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from fastapi import APIRouter
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.lib.logging import get_logger
+from src.storage.db import get_session
+from src.storage.repositories import course_overrides as overrides_repo
 
 logger = get_logger(__name__)
 
@@ -168,8 +173,17 @@ def _build_download_to_extract_map(download_dir: Path) -> dict[str, str]:
 
 
 @router.get("/synced", response_model=SyncedCoursesResponse)
-async def list_synced_courses() -> SyncedCoursesResponse:
-    """List courses that have been synced — reads from S3 slides/ prefix."""
+async def list_synced_courses(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> SyncedCoursesResponse:
+    """List courses that have been synced — reads from S3 slides/ prefix.
+
+    The ``semester`` field returned to the client is the regex-derived value
+    from the Moodle download folder, unless the student has applied an
+    override via :func:`upsert_course_override`.  ``dataset_name`` is never
+    overridden because S3 / Cognee / quiz history all key on it.
+    """
     from src.lib.s3 import list_objects
 
     objects = await list_objects("slides/")
@@ -180,9 +194,14 @@ async def list_synced_courses() -> SyncedCoursesResponse:
             dataset = parts[1]
             course_files[dataset] = course_files.get(dataset, 0) + 1
 
+    overrides = await overrides_repo.get_overrides(session, student_id)
+
     courses: list[SyncedCourse] = []
     for dataset, pdf_count in sorted(course_files.items()):
         display_name, code, semester = _parse_download_folder(dataset)
+        override = overrides.get(dataset, {})
+        if override.get("semester"):
+            semester = override["semester"]
         courses.append(
             SyncedCourse(
                 dataset_name=dataset,
@@ -195,6 +214,78 @@ async def list_synced_courses() -> SyncedCoursesResponse:
         )
 
     return SyncedCoursesResponse(courses=courses)
+
+
+# ---------------------------------------------------------------------------
+# Course-metadata override endpoints
+# ---------------------------------------------------------------------------
+
+
+class CourseOverridesResponse(BaseModel):
+    """Map of dataset_name → override fields (currently just ``semester``)."""
+
+    overrides: dict[str, dict[str, str]]
+
+
+class CourseOverrideUpsert(BaseModel):
+    """Body for setting a single course's semester override."""
+
+    student_id: str = "demo"
+    semester: str
+
+
+@router.get("/synced/overrides", response_model=CourseOverridesResponse)
+async def list_course_overrides(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Return all per-course metadata overrides for ``student_id``."""
+    overrides = await overrides_repo.get_overrides(session, student_id)
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.put("/synced/overrides/{dataset_name}", response_model=CourseOverridesResponse)
+async def upsert_course_override(
+    dataset_name: str,
+    body: CourseOverrideUpsert,
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Set the semester override for a single Cognee dataset."""
+    semester = body.semester.strip()
+    if not semester:
+        raise HTTPException(status_code=400, detail="semester must not be empty")
+    overrides = await overrides_repo.set_override(
+        session,
+        student_id=body.student_id,
+        dataset_name=dataset_name,
+        semester=semester,
+    )
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.delete("/synced/overrides/{dataset_name}", response_model=CourseOverridesResponse)
+async def delete_course_override(
+    dataset_name: str,
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Drop the semester override for one dataset, restoring the regex value."""
+    overrides = await overrides_repo.delete_override(
+        session,
+        student_id=student_id,
+        dataset_name=dataset_name,
+    )
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.delete("/synced/overrides", response_model=CourseOverridesResponse)
+async def clear_course_overrides(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Drop all overrides for ``student_id`` — used by the UI's *Reset* button."""
+    await overrides_repo.clear_overrides(session, student_id)
+    return CourseOverridesResponse(overrides={})
 
 
 class FileListResponse(BaseModel):

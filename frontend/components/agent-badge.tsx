@@ -21,11 +21,13 @@ export function AgentBadge({
   className,
   withDot = true,
   label,
+  thinking = false,
 }: {
   agent: AgentType
   className?: string
   withDot?: boolean
   label?: string
+  thinking?: boolean
 }) {
   return (
     <span
@@ -35,8 +37,37 @@ export function AgentBadge({
         className,
       )}
     >
-      {withDot ? <span className={cn("h-1.5 w-1.5 rounded-full", dots[agent])} aria-hidden /> : null}
-      {label ?? agentLabel[agent]}
+      {withDot ? (
+        <span
+          className={cn(
+            "h-1.5 w-1.5 rounded-full",
+            dots[agent],
+            thinking && "animate-pulse",
+          )}
+          aria-hidden
+        />
+      ) : null}
+      <span className="inline-flex items-center">
+        {label ?? agentLabel[agent]}
+        {thinking ? (
+          <span className="ml-0.5 inline-flex" aria-hidden>
+            <Dot delay="0ms" />
+            <Dot delay="150ms" />
+            <Dot delay="300ms" />
+          </span>
+        ) : null}
+      </span>
+    </span>
+  )
+}
+
+function Dot({ delay }: { delay: string }) {
+  return (
+    <span
+      className="animate-pulse"
+      style={{ animationDelay: delay, animationDuration: "1.2s" }}
+    >
+      .
     </span>
   )
 }

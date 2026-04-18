@@ -9,13 +9,6 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
-import { Switch } from "@/components/ui/switch"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -31,12 +24,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { courses, deadlines, theses, studyRooms } from "@/lib/mock-data"
+import { deadlines, theses, studyRooms } from "@/lib/mock-data"
 import {
   runFullPipeline,
   listCourseFiles,
   getFileUrl,
   listSyncedCourses,
+  listCourseOverrides,
+  setCourseSemesterOverride,
+  clearCourseOverrides,
   getCourseProgress,
   requestQuiz,
   requestFlashcards,
@@ -56,19 +52,55 @@ import {
   ChevronRight,
   Download,
   FileText,
+  GripVertical,
   Layers,
   Loader2,
   Mail,
   MapPin,
+  Plus,
   RefreshCw,
   Search,
   Sparkles,
+  Undo2,
   Users as UsersIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-type Course = (typeof courses)[number]
+const _SEMESTER_RE = /(SoSe|WiSe)\s+(\d{4})/
+const _UNKNOWN_SEMESTER = "Other"
+
+function semesterSortKey(label: string): number {
+  const m = _SEMESTER_RE.exec(label)
+  if (!m) return -Infinity
+  const year = Number.parseInt(m[2], 10)
+  return year * 2 + (m[1] === "WiSe" ? 1 : 0)
+}
+
+function groupCoursesBySemester(
+  courses: SyncedCourse[],
+): { semester: string; key: number; items: SyncedCourse[] }[] {
+  const buckets = new Map<string, SyncedCourse[]>()
+  for (const c of courses) {
+    const label = c.semester || _UNKNOWN_SEMESTER
+    const bucket = buckets.get(label)
+    if (bucket) bucket.push(c)
+    else buckets.set(label, [c])
+  }
+  return [...buckets.entries()]
+    .map(([semester, items]) => ({
+      semester,
+      key: semesterSortKey(semester),
+      items: [...items].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    }))
+    .sort((a, b) => b.key - a.key)
+}
+
+// Semester overrides are persisted on the backend via
+// `students.course_overrides` (see src/storage/repositories/course_overrides.py)
+// keyed by Cognee `dataset_name` so quiz / flashcard / S3 paths stay stable.
+const COURSE_DRAG_MIME = "application/x-campus-course-dataset"
+const STUDENT_ID = "demo"
 
 export default function AcademicPage() {
   return (
@@ -105,23 +137,38 @@ export default function AcademicPage() {
 }
 
 function CoursesTab() {
-  const [selected, setSelected] = React.useState<Course | null>(null)
   const [selectedSynced, setSelectedSynced] = React.useState<SyncedCourse | null>(null)
   const [syncing, setSyncing] = React.useState(false)
+  const [loading, setLoading] = React.useState(true)
   const [syncedCourses, setSyncedCourses] = React.useState<SyncedCourse[]>([])
   const [masteryMap, setMasteryMap] = React.useState<Record<string, number>>({})
+  const [overrides, setOverrides] = React.useState<Record<string, { semester?: string }>>({})
+  const [extraSemesters, setExtraSemesters] = React.useState<string[]>([])
+  const [draggingId, setDraggingId] = React.useState<string | null>(null)
+  const [dropTarget, setDropTarget] = React.useState<string | null>(null)
+  const [addingSemester, setAddingSemester] = React.useState(false)
+  const [newSemester, setNewSemester] = React.useState("")
 
   React.useEffect(() => {
-    listSyncedCourses()
+    listCourseOverrides(STUDENT_ID)
+      .then((res) => setOverrides(res.overrides))
+      .catch(() => {
+        // Endpoint not reachable (offline or backend down) — no overrides applied.
+      })
+  }, [])
+
+  React.useEffect(() => {
+    listSyncedCourses(STUDENT_ID)
       .then((res) => {
         setSyncedCourses(res.courses)
         for (const sc of res.courses) {
-          getCourseProgress("demo", sc.dataset_name)
+          getCourseProgress(STUDENT_ID, sc.dataset_name)
             .then((p) => setMasteryMap((prev) => ({ ...prev, [sc.dataset_name]: Math.round(p.overall_mastery * 100) })))
             .catch(() => {})
         }
       })
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   const handleSync = async () => {
@@ -130,7 +177,7 @@ function CoursesTab() {
       const result = await runFullPipeline()
       const ingested = result.ingestions?.filter((i) => i.status === "ingesting").length ?? 0
       toast.success(`Pipeline complete: ${ingested} courses ingested to S3 + Cognee`)
-      const synced = await listSyncedCourses()
+      const synced = await listSyncedCourses(STUDENT_ID)
       setSyncedCourses(synced.courses)
     } catch (err) {
       toast.error(`Pipeline failed: ${err instanceof Error ? err.message : "Unknown error"}`)
@@ -139,108 +186,287 @@ function CoursesTab() {
     }
   }
 
+  const setOverride = React.useCallback(async (datasetName: string, semester: string) => {
+    // Optimistic update so the card moves immediately.
+    setOverrides((prev) => ({ ...prev, [datasetName]: { semester } }))
+    try {
+      const res = await setCourseSemesterOverride(datasetName, semester, STUDENT_ID)
+      setOverrides(res.overrides)
+    } catch (err) {
+      toast.error(
+        `Could not save the new semester: ${err instanceof Error ? err.message : "Unknown error"}`,
+      )
+      // Roll back to the server's truth.
+      try {
+        const fresh = await listCourseOverrides(STUDENT_ID)
+        setOverrides(fresh.overrides)
+      } catch {
+        /* leave optimistic state in place */
+      }
+    }
+  }, [])
+
+  const resetOverrides = React.useCallback(async () => {
+    const previous = overrides
+    setOverrides({})
+    setExtraSemesters([])
+    try {
+      await clearCourseOverrides(STUDENT_ID)
+      toast.success("Restored Moodle semester labels")
+    } catch (err) {
+      setOverrides(previous)
+      toast.error(
+        `Could not reset overrides: ${err instanceof Error ? err.message : "Unknown error"}`,
+      )
+    }
+  }, [overrides])
+
+  const addExtraSemester = React.useCallback((label: string) => {
+    const trimmed = label.trim()
+    if (!trimmed) return
+    setExtraSemesters((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]))
+  }, [])
+
+  const effectiveCourses = React.useMemo(
+    () =>
+      syncedCourses.map((c) => ({
+        ...c,
+        semester: overrides[c.dataset_name]?.semester ?? c.semester,
+      })),
+    [syncedCourses, overrides],
+  )
+
+  const groups = React.useMemo(() => {
+    const fromCourses = groupCoursesBySemester(effectiveCourses)
+    const existing = new Set(fromCourses.map((g) => g.semester))
+    const empties = extraSemesters
+      .filter((s) => !existing.has(s))
+      .map((s) => ({ semester: s, key: semesterSortKey(s), items: [] as SyncedCourse[] }))
+    return [...fromCourses, ...empties].sort((a, b) => b.key - a.key)
+  }, [effectiveCourses, extraSemesters])
+
+  const overrideCount = Object.keys(overrides).length
+
+  const handleDragStart = (e: React.DragEvent<HTMLElement>, datasetName: string) => {
+    e.dataTransfer.setData(COURSE_DRAG_MIME, datasetName)
+    e.dataTransfer.effectAllowed = "move"
+    setDraggingId(datasetName)
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null)
+    setDropTarget(null)
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLElement>, semester: string) => {
+    if (!e.dataTransfer.types.includes(COURSE_DRAG_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (dropTarget !== semester) setDropTarget(semester)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLElement>, semester: string) => {
+    // Only clear if we're actually leaving the section, not entering a child.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    if (dropTarget === semester) setDropTarget(null)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLElement>, targetSemester: string) => {
+    e.preventDefault()
+    const datasetName = e.dataTransfer.getData(COURSE_DRAG_MIME)
+    setDropTarget(null)
+    setDraggingId(null)
+    if (!datasetName) return
+    const current = effectiveCourses.find((c) => c.dataset_name === datasetName)
+    if (!current) return
+    if (current.semester === targetSemester) return
+    void setOverride(datasetName, targetSemester)
+    toast.success(`Moved “${current.display_name}” → ${targetSemester}`)
+  }
+
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        {syncedCourses.length > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {syncedCourses.length} courses synced from Moodle
-          </div>
-        )}
-        <Button onClick={handleSync} disabled={syncing} className="ml-auto gap-2">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {syncedCourses.length > 0
+            ? `${syncedCourses.length} course${syncedCourses.length === 1 ? "" : "s"} synced from Moodle · drag a card into a semester to re-categorise`
+            : loading
+              ? "Loading your Moodle courses…"
+              : "No Moodle courses synced yet."}
+        </div>
+        <Button onClick={handleSync} disabled={syncing} className="gap-2">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           {syncing ? "Syncing from Moodle…" : "Sync from Moodle"}
         </Button>
       </div>
 
-      {syncedCourses.length > 0 && (
-        <div className="mb-6">
-          <div className="mb-2 text-sm font-medium">Synced courses (from Moodle)</div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {syncedCourses.map((sc) => {
-              const mastery = masteryMap[sc.dataset_name] ?? 0
-              return (
-                <button
-                  key={sc.dataset_name}
-                  onClick={() => setSelectedSynced(sc)}
-                  className="group text-left"
-                >
-                  <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          {sc.course_code && (
-                            <div className="font-mono text-xs font-medium text-primary">{sc.course_code}</div>
-                          )}
-                          <CardTitle className="mt-0.5 text-base leading-snug">{sc.display_name}</CardTitle>
-                        </div>
-                        {sc.pdf_count > 0 ? (
-                          <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
-                            {sc.pdf_count} PDFs
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      {sc.semester && (
-                        <div className="text-xs text-muted-foreground">{sc.semester}</div>
-                      )}
-                      <div className="mt-3 flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Mastery</span>
-                        <span className="font-medium tabular-nums">{mastery}%</span>
-                      </div>
-                      <Progress value={mastery} className="mt-1.5 h-1.5" />
-                      <div className="mt-3 flex items-center justify-end text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                        Open <ChevronRight className="ml-0.5 h-3 w-3" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                </button>
-              )
-            })}
-          </div>
+      {overrideCount > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          <span>
+            {overrideCount} course{overrideCount === 1 ? "" : "s"} re-categorised from the Moodle defaults.
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-xs"
+            onClick={() => void resetOverrides()}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            Reset to Moodle labels
+          </Button>
         </div>
       )}
 
-      <div className="mb-2 text-sm font-medium">Your courses</div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {courses.map((c) => (
-          <button
-            key={c.code}
-            onClick={() => setSelected(c)}
-            className="group text-left"
-          >
-            <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs font-medium text-primary">{c.code}</div>
-                    <CardTitle className="mt-0.5 text-base leading-snug">{c.name}</CardTitle>
-                  </div>
-                  {c.newSlides ? (
-                    <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
-                      New slides
-                    </Badge>
-                  ) : null}
+      <div className="flex flex-col gap-6">
+        {groups.map((group) => {
+          const isTarget = dropTarget === group.semester
+          return (
+            <section
+              key={group.semester}
+              onDragOver={(e) => handleDragOver(e, group.semester)}
+              onDragEnter={(e) => handleDragOver(e, group.semester)}
+              onDragLeave={(e) => handleDragLeave(e, group.semester)}
+              onDrop={(e) => handleDrop(e, group.semester)}
+              className={cn(
+                "rounded-lg border border-transparent p-2 transition-colors",
+                isTarget && "border-primary/40 bg-primary/5",
+              )}
+            >
+              <div className="mb-2 flex items-baseline justify-between">
+                <h2 className="text-sm font-medium">{group.semester}</h2>
+                <span className="text-xs text-muted-foreground">
+                  {group.items.length} course{group.items.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              {group.items.length === 0 ? (
+                <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground">
+                  Drop a course here to assign it to {group.semester}
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground">{c.chair}</div>
-                <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Mastery</span>
-                  <span className="font-medium tabular-nums">{c.mastery}%</span>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {group.items.map((sc) => {
+                    const mastery = masteryMap[sc.dataset_name] ?? 0
+                    const isDragging = draggingId === sc.dataset_name
+                    return (
+                      <div
+                        key={sc.dataset_name}
+                        role="button"
+                        tabIndex={0}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, sc.dataset_name)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => setSelectedSynced(sc)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            setSelectedSynced(sc)
+                          }
+                        }}
+                        className={cn(
+                          "group cursor-grab text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 active:cursor-grabbing",
+                          isDragging && "opacity-50",
+                        )}
+                      >
+                        <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
+                          <CardHeader className="pb-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 items-start gap-2">
+                                <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground" />
+                                <div className="min-w-0">
+                                  {sc.course_code && (
+                                    <div className="font-mono text-xs font-medium text-primary">
+                                      {sc.course_code}
+                                    </div>
+                                  )}
+                                  <CardTitle className="mt-0.5 text-base leading-snug">
+                                    {sc.display_name}
+                                  </CardTitle>
+                                </div>
+                              </div>
+                              {sc.pdf_count > 0 ? (
+                                <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
+                                  {sc.pdf_count} PDFs
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="shrink-0">
+                                  No files
+                                </Badge>
+                              )}
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            {sc.semester && (
+                              <div className="text-xs text-muted-foreground">{sc.semester}</div>
+                            )}
+                            <div className="mt-3 flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">Mastery</span>
+                              <span className="font-medium tabular-nums">{mastery}%</span>
+                            </div>
+                            <Progress value={mastery} className="mt-1.5 h-1.5" />
+                            <div className="mt-3 flex items-center justify-end text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                              Open <ChevronRight className="ml-0.5 h-3 w-3" />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )
+                  })}
                 </div>
-                <Progress value={c.mastery} className="mt-1.5 h-1.5" />
-                <div className="mt-3 flex items-center justify-end text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                  Open <ChevronRight className="ml-0.5 h-3 w-3" />
-                </div>
-              </CardContent>
-            </Card>
-          </button>
-        ))}
+              )}
+            </section>
+          )
+        })}
+
+        {syncedCourses.length > 0 && (
+          <div className="flex items-center gap-2">
+            {addingSemester ? (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  addExtraSemester(newSemester)
+                  setNewSemester("")
+                  setAddingSemester(false)
+                }}
+              >
+                <Input
+                  autoFocus
+                  value={newSemester}
+                  onChange={(e) => setNewSemester(e.target.value)}
+                  placeholder="e.g. WiSe 2025/26"
+                  className="h-8 w-48 text-sm"
+                />
+                <Button type="submit" size="sm" className="h-8">
+                  Add
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-8"
+                  onClick={() => {
+                    setAddingSemester(false)
+                    setNewSemester("")
+                  }}
+                >
+                  Cancel
+                </Button>
+              </form>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5"
+                onClick={() => setAddingSemester(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add semester
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
-      <CourseDetailDialog course={selected} onClose={() => setSelected(null)} />
       <SyncedCourseDialog course={selectedSynced} onClose={() => setSelectedSynced(null)} />
     </>
   )

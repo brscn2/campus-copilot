@@ -36,6 +36,7 @@ dev = [
     "mypy>=1.13.0",
     "ruff>=0.8.0",
     "types-boto3>=1.35.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [tool.uv]
