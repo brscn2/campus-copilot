@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
-DEMO_STUDENT_ID = "demo_student"
+DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +125,12 @@ async def create_event(request: CreateEventRequest) -> dict[str, Any]:
     starts_at = datetime.fromisoformat(request.starts_at)
     ends_at = datetime.fromisoformat(request.ends_at)
 
+    # Ensure UTC timezone — Google Calendar API requires RFC 3339 with tz
+    if starts_at.tzinfo is None:
+        starts_at = starts_at.replace(tzinfo=UTC)
+    if ends_at.tzinfo is None:
+        ends_at = ends_at.replace(tzinfo=UTC)
+
     logger.info("calendar_create_event", title=request.title)
     result = await register_booking(
         student_id=DEMO_STUDENT_ID,
@@ -151,21 +157,31 @@ async def delete_event(event_id: str) -> JSONResponse:
 @router.get("/status")
 async def calendar_status() -> dict[str, bool]:
     """Return Google Calendar connection status."""
+    from pathlib import Path
+
     settings = get_settings()
 
     if settings.google_calendar_mode == "mock":
         return {"connected": True}
 
-    from sqlalchemy import select
+    # 1. Check local token file
+    if Path(".gcal_token.json").exists():
+        return {"connected": True}
 
-    from src.storage.db import get_session
-    from src.storage.schema import StudentRow
+    # 2. Best-effort DB check
+    try:
+        from sqlalchemy import select
 
-    async for session in get_session():
-        result = await session.execute(
-            select(StudentRow.google_calendar_token).where(StudentRow.id == DEMO_STUDENT_ID)
-        )
-        token = result.scalar_one_or_none()
-        return {"connected": token is not None}
+        from src.storage.db import get_session
+        from src.storage.schema import StudentRow
+
+        async for session in get_session():
+            result = await session.execute(
+                select(StudentRow.google_calendar_token).where(StudentRow.id == DEMO_STUDENT_ID)
+            )
+            token = result.scalar_one_or_none()
+            return {"connected": token is not None}
+    except Exception:
+        logger.warning("calendar_status_db_check_failed", exc_info=True)
 
     return {"connected": False}

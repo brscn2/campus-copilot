@@ -17,7 +17,7 @@ from src.models.calendar_event import CalendarEvent
 
 logger = structlog.get_logger(__name__)
 
-DEMO_STUDENT = "demo_student"
+DEMO_STUDENT = "00000000-0000-0000-0000-000000000001"
 
 # ---------------------------------------------------------------------------
 # Agent-type inference from event titles
@@ -236,40 +236,61 @@ def _get_gcal_service(credentials: Any) -> Any:
 
 
 async def get_credentials(student_id: str) -> Any:
-    """Load stored refresh token from DB, build google.oauth2.credentials.Credentials."""
+    """Load Google OAuth credentials — file first, DB fallback.
+
+    1. Check `.gcal_token.json` on disk (works without Postgres).
+    2. If missing, try DB lookup.
+    3. If neither has a token, raise CalendarNotConnectedError.
+    """
+    import json
+    from pathlib import Path
+
     from google.oauth2.credentials import Credentials
-
-    from src.storage.db import get_session
-
-    settings = get_settings()
-
-    async for session in get_session():
-        from sqlalchemy import select
-
-        from src.storage.schema import StudentRow
-
-        result = await session.execute(select(StudentRow).where(StudentRow.id == student_id))
-        student = result.scalar_one_or_none()
-
-        if not student or not student.google_calendar_token:
-            from src.exceptions import CalendarNotConnectedError
-
-            raise CalendarNotConnectedError("Google Calendar not connected")
-
-        import json
-
-        token_data = json.loads(student.google_calendar_token.decode("utf-8"))
-        return Credentials(
-            token=token_data.get("token"),
-            refresh_token=token_data.get("refresh_token"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.google_oauth_client_id,
-            client_secret=settings.google_oauth_client_secret,
-        )
 
     from src.exceptions import CalendarNotConnectedError
 
-    raise CalendarNotConnectedError("Google Calendar not connected")
+    settings = get_settings()
+    token_file = Path(".gcal_token.json")
+    token_data: dict[str, Any] | None = None
+
+    # 1. File-based check
+    if token_file.exists():
+        try:
+            token_data = json.loads(token_file.read_text())
+            logger.info("gcal_credentials_loaded_from_file")
+        except (json.JSONDecodeError, OSError):
+            logger.warning("gcal_credentials_file_unreadable", exc_info=True)
+
+    # 2. DB fallback
+    if token_data is None:
+        try:
+            from sqlalchemy import select
+
+            from src.storage.db import get_session
+            from src.storage.schema import StudentRow
+
+            async for session in get_session():
+                result = await session.execute(
+                    select(StudentRow).where(StudentRow.id == student_id)
+                )
+                student = result.scalar_one_or_none()
+                if student and student.google_calendar_token:
+                    raw = student.google_calendar_token
+                    token_data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+                    logger.info("gcal_credentials_loaded_from_db", student_id=student_id)
+        except Exception:
+            logger.warning("gcal_credentials_db_lookup_failed", exc_info=True)
+
+    if token_data is None:
+        raise CalendarNotConnectedError("Google Calendar not connected")
+
+    return Credentials(
+        token=token_data.get("token"),
+        refresh_token=token_data.get("refresh_token"),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.google_oauth_client_id,
+        client_secret=settings.google_oauth_client_secret,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +321,12 @@ async def list_events(
     logger.info("gcal_list_events_live", student_id=student_id)
     creds = await get_credentials(student_id)
     service = await asyncio.to_thread(_get_gcal_service, creds)
+
+    # Google Calendar API requires RFC 3339 datetimes with timezone info
+    if time_min.tzinfo is None:
+        time_min = time_min.replace(tzinfo=UTC)
+    if time_max.tzinfo is None:
+        time_max = time_max.replace(tzinfo=UTC)
 
     result = await asyncio.to_thread(
         lambda: (
