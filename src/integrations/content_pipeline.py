@@ -62,7 +62,12 @@ def extract_all_zips(
         dest.mkdir(parents=True, exist_ok=True)
 
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(dest)
+            for member in zf.namelist():
+                member_path = (dest / member).resolve()
+                if not member_path.is_relative_to(dest.resolve()):
+                    logger.warning("zip_slip_blocked", zip=str(zip_path), member=member)
+                    continue
+                zf.extract(member, dest)
 
         files = list(dest.rglob("*"))
         pdfs = [f for f in files if f.suffix.lower() == ".pdf"]

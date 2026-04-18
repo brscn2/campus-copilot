@@ -75,7 +75,11 @@ async def download_file(key: str) -> bytes:
         Bucket=settings.s3_bucket,
         Key=key,
     )
-    data: bytes = await asyncio.to_thread(response["Body"].read)
+    body = response["Body"]
+    try:
+        data: bytes = await asyncio.to_thread(body.read)
+    finally:
+        body.close()
     logger.info("s3_download_done", key=key, size=len(data))
     return data
 
@@ -114,19 +118,21 @@ async def list_objects(prefix: str) -> list[dict[str, Any]]:
     settings = get_settings()
     client = _get_client()
 
-    response = await asyncio.to_thread(
-        client.list_objects_v2,
-        Bucket=settings.s3_bucket,
-        Prefix=prefix,
-    )
-
     objects: list[dict[str, Any]] = []
-    for obj in response.get("Contents", []):
-        objects.append(
-            {
-                "key": obj["Key"],
-                "size": obj["Size"],
-                "last_modified": obj["LastModified"].isoformat(),
-            }
-        )
+    kwargs: dict[str, Any] = {"Bucket": settings.s3_bucket, "Prefix": prefix}
+
+    while True:
+        response = await asyncio.to_thread(client.list_objects_v2, **kwargs)
+        for obj in response.get("Contents", []):
+            objects.append(
+                {
+                    "key": obj["Key"],
+                    "size": obj["Size"],
+                    "last_modified": obj["LastModified"].isoformat(),
+                }
+            )
+        if not response.get("IsTruncated"):
+            break
+        kwargs["ContinuationToken"] = response["NextContinuationToken"]
+
     return objects

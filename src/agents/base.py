@@ -16,6 +16,7 @@ class AgentInput(BaseModel):
     session_id: str
     student_id: str
     context: dict[str, Any] = {}
+    history: list[dict[str, str]] = []
 
 
 class AgentAction(BaseModel):
@@ -34,7 +35,7 @@ class AgentOutput(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    agent: Literal["academic", "career", "social"]
+    agent: Literal["academic", "career", "social", "orchestrator"]
     message: str
     actions: list[AgentAction] = []
     data: dict[str, Any] = {}

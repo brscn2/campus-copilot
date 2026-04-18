@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Any
+# ruff: noqa: B008
+import re
+from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.lib.logging import get_logger
+from src.storage.db import get_session
+from src.storage.repositories import course_overrides as overrides_repo
 
 logger = get_logger(__name__)
 
@@ -113,10 +122,8 @@ class SyncedCoursesResponse(BaseModel):
     courses: list[SyncedCourse]
 
 
-import re
-
-_CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?")
-_SEM_RE = re.compile(r"((?:SoSe|WiSe)\s+\d{4}(?:[_/]\d{2,4})?)")
+_CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?", re.IGNORECASE)
+_SEM_RE = re.compile(r"((?:SoSe|WiSe|sose|wise)[_ ]*\d{4}(?:[_/ ]\d{2,4})?)", re.IGNORECASE)
 _FACULTY_RE = re.compile(
     r"\s*[_\-]\s*(?:Computation|Studentische|TUM Global|Alumni Office).*",
     re.IGNORECASE,
@@ -129,7 +136,16 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     code = codes[0].upper() if codes else ""
 
     sem_match = _SEM_RE.search(raw_name)
-    semester = sem_match.group(1).replace("_", "/") if sem_match else ""
+    if sem_match:
+        raw_sem = sem_match.group(1).replace("_", " ").strip()
+        if raw_sem[:4].lower() == "wise":
+            semester = "WiSe " + raw_sem[4:].strip().replace(" ", "/")
+        elif raw_sem[:4].lower() == "sose":
+            semester = "SoSe " + raw_sem[4:].strip()
+        else:
+            semester = raw_sem
+    else:
+        semester = ""
 
     name = raw_name
     name = _FACULTY_RE.sub("", name)
@@ -138,11 +154,12 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     name = _SEM_RE.sub("", name)
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"\s{2,}", " ", name).strip(" .,_-")
+    name = name.title() if name == name.lower() else name
 
     return name or raw_name, code, semester
 
 
-def _build_download_to_extract_map(download_dir: "Path", extract_dir: "Path") -> dict[str, str]:
+def _build_download_to_extract_map(download_dir: Path) -> dict[str, str]:
     """Map extracted folder names back to their original download folder names."""
     from src.integrations.content_pipeline import _safe_dataset_name
 
@@ -156,42 +173,119 @@ def _build_download_to_extract_map(download_dir: "Path", extract_dir: "Path") ->
 
 
 @router.get("/synced", response_model=SyncedCoursesResponse)
-async def list_synced_courses() -> SyncedCoursesResponse:
-    """List courses that have been synced (extracted locally)."""
-    from pathlib import Path
+async def list_synced_courses(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> SyncedCoursesResponse:
+    """List courses that have been synced — reads from S3 slides/ prefix.
 
-    from src.config import get_settings
+    The ``semester`` field returned to the client is the regex-derived value
+    from the Moodle download folder, unless the student has applied an
+    override via :func:`upsert_course_override`.  ``dataset_name`` is never
+    overridden because S3 / Cognee / quiz history all key on it.
+    """
+    from src.lib.s3 import list_objects
 
-    settings = get_settings()
-    extract_dir = Path(settings.moodle_extract_dir)
-    download_dir = Path(settings.moodle_download_dir)
+    objects = await list_objects("slides/")
+    course_files: dict[str, int] = {}
+    for obj in objects:
+        parts = obj["key"].split("/")
+        if len(parts) >= 3 and parts[1]:
+            dataset = parts[1]
+            course_files[dataset] = course_files.get(dataset, 0) + 1
 
-    if not extract_dir.exists():
-        return SyncedCoursesResponse(courses=[])
-
-    name_map = _build_download_to_extract_map(download_dir, extract_dir)
+    overrides = await overrides_repo.get_overrides(session, student_id)
 
     courses: list[SyncedCourse] = []
-    for course_dir in sorted(extract_dir.iterdir()):
-        if not course_dir.is_dir():
-            continue
-        dataset = course_dir.name
-        pdfs = list(course_dir.rglob("*.pdf"))
-        s3_prefix = f"slides/{dataset}/"
-        original_name = name_map.get(dataset, dataset)
-        display_name, code, semester = _parse_download_folder(original_name)
+    for dataset, pdf_count in sorted(course_files.items()):
+        display_name, code, semester = _parse_download_folder(dataset)
+        override = overrides.get(dataset, {})
+        if override.get("semester"):
+            semester = override["semester"]
         courses.append(
             SyncedCourse(
                 dataset_name=dataset,
                 display_name=display_name,
                 course_code=code,
                 semester=semester,
-                pdf_count=len(pdfs),
-                s3_prefix=s3_prefix,
+                pdf_count=pdf_count,
+                s3_prefix=f"slides/{dataset}/",
             )
         )
 
     return SyncedCoursesResponse(courses=courses)
+
+
+# ---------------------------------------------------------------------------
+# Course-metadata override endpoints
+# ---------------------------------------------------------------------------
+
+
+class CourseOverridesResponse(BaseModel):
+    """Map of dataset_name → override fields (currently just ``semester``)."""
+
+    overrides: dict[str, dict[str, str]]
+
+
+class CourseOverrideUpsert(BaseModel):
+    """Body for setting a single course's semester override."""
+
+    student_id: str = "demo"
+    semester: str
+
+
+@router.get("/synced/overrides", response_model=CourseOverridesResponse)
+async def list_course_overrides(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Return all per-course metadata overrides for ``student_id``."""
+    overrides = await overrides_repo.get_overrides(session, student_id)
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.put("/synced/overrides/{dataset_name}", response_model=CourseOverridesResponse)
+async def upsert_course_override(
+    dataset_name: str,
+    body: CourseOverrideUpsert,
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Set the semester override for a single Cognee dataset."""
+    semester = body.semester.strip()
+    if not semester:
+        raise HTTPException(status_code=400, detail="semester must not be empty")
+    overrides = await overrides_repo.set_override(
+        session,
+        student_id=body.student_id,
+        dataset_name=dataset_name,
+        semester=semester,
+    )
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.delete("/synced/overrides/{dataset_name}", response_model=CourseOverridesResponse)
+async def delete_course_override(
+    dataset_name: str,
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Drop the semester override for one dataset, restoring the regex value."""
+    overrides = await overrides_repo.delete_override(
+        session,
+        student_id=student_id,
+        dataset_name=dataset_name,
+    )
+    return CourseOverridesResponse(overrides=overrides)
+
+
+@router.delete("/synced/overrides", response_model=CourseOverridesResponse)
+async def clear_course_overrides(
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> CourseOverridesResponse:
+    """Drop all overrides for ``student_id`` — used by the UI's *Reset* button."""
+    await overrides_repo.clear_overrides(session, student_id)
+    return CourseOverridesResponse(overrides={})
 
 
 class FileListResponse(BaseModel):

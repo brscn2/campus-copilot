@@ -5,9 +5,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { AgentBadge } from "@/components/agent-badge"
+import { AgentMessage } from "@/components/agent-message"
 import { useChat } from "@/components/chat-context"
 import type { AgentType } from "@/lib/mock-data"
-import { user } from "@/lib/mock-data"
+import { agentLabel, user } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { ArrowUp, CalendarCheck2, CheckCircle2, Sparkles } from "lucide-react"
 
@@ -116,9 +117,9 @@ export function ChatDrawer() {
     {
       id: "welcome",
       role: "agent",
-      agent: "academic",
+      agent: "orchestrator",
       text:
-        "Hi Alex! I coordinate your Academic, Career, and Social agents. Ask me anything — I'll route to the right specialist.",
+        "Hi Alex! I'm **Campus Co-Pilot** — I coordinate your Academic, Career, and Social agents. Ask me anything and I'll route to the right specialist.",
     },
   ])
   const [input, setInput] = React.useState("")
@@ -127,55 +128,116 @@ export function ChatDrawer() {
 
   const send = React.useCallback((text: string) => {
     if (!text.trim()) return
-    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", text: text.trim() }
-    const streamingId = `a-${Date.now()}`
+    const trimmed = text.trim()
+    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", text: trimmed }
+    const orchestratorId = `o-${Date.now()}`
+    const specialistId = `s-${Date.now()}`
 
     setMessages((m) => [
       ...m,
       userMsg,
-      { id: streamingId, role: "agent", agent: "academic", text: "", streaming: true },
+      {
+        id: orchestratorId,
+        role: "agent",
+        agent: "orchestrator",
+        text: "",
+        streaming: true,
+      },
     ])
     setInput("")
     setIsLoading(true)
 
     sendToBackend(
-      text,
+      trimmed,
       () => {
         setMessages((m) =>
           m.map((msg) =>
-            msg.id === streamingId && msg.role === "agent"
-              ? { ...msg, text: "Thinking…" }
+            msg.id === orchestratorId && msg.role === "agent"
+              ? { ...msg, text: "Routing your request…" }
               : msg,
           ),
         )
       },
       (chunk, agent) => {
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === streamingId && msg.role === "agent"
-              ? { ...msg, text: chunk, agent }
-              : msg,
-          ),
-        )
+        setMessages((m) => {
+          const hasSpecialist = m.some((msg) => msg.id === specialistId)
+          if (hasSpecialist) {
+            return m.map((msg) =>
+              msg.id === specialistId && msg.role === "agent"
+                ? { ...msg, text: chunk, agent }
+                : msg,
+            )
+          }
+          return [
+            ...m.map((msg) =>
+              msg.id === orchestratorId && msg.role === "agent"
+                ? {
+                    ...msg,
+                    text: `Handing off to **${agentLabel[agent]} Agent**…`,
+                    streaming: false,
+                  }
+                : msg,
+            ),
+            {
+              id: specialistId,
+              role: "agent",
+              agent,
+              text: chunk,
+              streaming: true,
+            },
+          ]
+        })
       },
       (finalText, agent) => {
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === streamingId && msg.role === "agent"
-              ? { ...msg, text: finalText, agent, streaming: false }
+        setMessages((m) => {
+          if (agent === "orchestrator") {
+            return m.map((msg) =>
+              msg.id === orchestratorId && msg.role === "agent"
+                ? { ...msg, text: finalText, streaming: false }
+                : msg,
+            )
+          }
+
+          const updated = m.map((msg) =>
+            msg.id === orchestratorId && msg.role === "agent"
+              ? {
+                  ...msg,
+                  text: `Handed off to **${agentLabel[agent]} Agent**.`,
+                  streaming: false,
+                }
               : msg,
-          ),
-        )
+          )
+
+          const hasSpecialist = updated.some((msg) => msg.id === specialistId)
+          if (hasSpecialist) {
+            return updated.map((msg) =>
+              msg.id === specialistId && msg.role === "agent"
+                ? { ...msg, text: finalText, agent, streaming: false }
+                : msg,
+            )
+          }
+
+          return [
+            ...updated,
+            {
+              id: specialistId,
+              role: "agent",
+              agent,
+              text: finalText,
+              streaming: false,
+            },
+          ]
+        })
         setIsLoading(false)
       },
       () => {
         setMessages((m) =>
           m.map((msg) =>
-            msg.id === streamingId && msg.role === "agent"
+            msg.id === orchestratorId && msg.role === "agent"
               ? {
                   ...msg,
                   text: "Backend is not reachable. Make sure the FastAPI server is running on port 8000.",
-                  agent: "academic" as AgentType,
+                  agent: "orchestrator" as AgentType,
                   streaming: false,
                 }
               : msg,
@@ -208,7 +270,7 @@ export function ChatDrawer() {
             Ask Co-Pilot
           </SheetTitle>
           <SheetDescription className="text-xs">
-            Orchestrator routes your request to Academic, Career, or Social agents.
+            Campus Co-Pilot routes your request to Academic, Career, or Social agents.
           </SheetDescription>
         </SheetHeader>
 
@@ -216,7 +278,10 @@ export function ChatDrawer() {
           <div className="flex flex-col gap-4">
             {messages.map((msg) =>
               msg.role === "user" ? (
-                <div key={msg.id} className="flex justify-end gap-2">
+                <div
+                  key={msg.id}
+                  className="flex animate-in fade-in slide-in-from-bottom-2 justify-end gap-2 duration-200"
+                >
                   <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
                     {msg.text}
                   </div>
@@ -225,22 +290,58 @@ export function ChatDrawer() {
                   </Avatar>
                 </div>
               ) : (
-                <div key={msg.id} className="flex gap-2">
-                  <div
-                    className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                      msg.agent === "academic" && "bg-academic-soft text-academic",
-                      msg.agent === "career" && "bg-career-soft text-career",
-                      msg.agent === "social" && "bg-social-soft text-social-foreground",
-                    )}
-                  >
-                    {msg.agent === "academic" ? "A" : msg.agent === "career" ? "C" : "S"}
+                <div
+                  key={msg.id}
+                  className="flex animate-in fade-in slide-in-from-bottom-2 gap-2 duration-300"
+                >
+                  <div className="relative h-7 w-7 shrink-0">
+                    {msg.agent === "orchestrator" && msg.streaming ? (
+                      <span
+                        className="absolute inset-0 animate-ping rounded-full bg-primary/40 opacity-60"
+                        aria-hidden
+                      />
+                    ) : null}
+                    <div
+                      className={cn(
+                        "relative flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold",
+                        msg.agent === "academic" && "bg-academic-soft text-academic",
+                        msg.agent === "career" && "bg-career-soft text-career",
+                        msg.agent === "social" && "bg-social-soft text-social-foreground",
+                        msg.agent === "orchestrator" && "bg-primary/10 text-primary",
+                      )}
+                    >
+                      {msg.agent === "orchestrator" ? (
+                        <Sparkles
+                          className={cn(
+                            "h-3.5 w-3.5 transition-transform",
+                            msg.streaming && "animate-pulse",
+                          )}
+                          aria-hidden
+                        />
+                      ) : msg.agent === "academic" ? (
+                        "A"
+                      ) : msg.agent === "career" ? (
+                        "C"
+                      ) : (
+                        "S"
+                      )}
+                    </div>
                   </div>
                   <div className="flex max-w-[85%] flex-col gap-2">
-                    <AgentBadge agent={msg.agent} label={`${msg.agent === "academic" ? "Academic" : msg.agent === "career" ? "Career" : "Social"} Agent${msg.streaming ? " is thinking…" : ""}`} />
-                    <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground whitespace-pre-wrap">
-                      {msg.text}
-                      {msg.streaming ? <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-foreground/60 align-middle" /> : null}
+                    <AgentBadge
+                      agent={msg.agent}
+                      thinking={msg.streaming}
+                      label={`${agentLabel[msg.agent]}${msg.agent === "orchestrator" ? "" : " Agent"}${msg.streaming ? " is thinking" : ""}`}
+                    />
+                    <div className="rounded-2xl rounded-tl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
+                      {msg.streaming && msg.text === "" ? (
+                        <TypingDots />
+                      ) : (
+                        <>
+                          <AgentMessage>{msg.text}</AgentMessage>
+                          {msg.streaming ? <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-foreground/60 align-middle" /> : null}
+                        </>
+                      )}
                     </div>
                     {msg.action && !msg.streaming ? <ActionCard kind={msg.action.kind} title={msg.action.title} detail={msg.action.detail} /> : null}
                   </div>
@@ -292,6 +393,29 @@ export function ChatDrawer() {
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function TypingDots() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 py-1"
+      aria-label="Thinking"
+      role="status"
+    >
+      <Bounce delay="0ms" />
+      <Bounce delay="150ms" />
+      <Bounce delay="300ms" />
+    </span>
+  )
+}
+
+function Bounce({ delay }: { delay: string }) {
+  return (
+    <span
+      className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/50"
+      style={{ animationDelay: delay, animationDuration: "1s" }}
+    />
   )
 }
 

@@ -67,4 +67,5 @@ The tool handles: add to cart → Zur Kasse → Weiter → accept terms → conf
 - Use the tools — don't make up data
 
 Today's date: {today}
-Student ID: {student_id}"""
+Student ID: {student_id}
+{memory_section}"""

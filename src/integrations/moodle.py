@@ -339,6 +339,120 @@ async def download_all_courses(
         await pw.stop()
 
 
+SLIDE_EXTENSIONS = (".pdf", ".pptx", ".ppt", ".key")
+
+
+async def get_slides(*, course_id: str) -> list[dict[str, Any]]:
+    """Return uploads from a course filtered to slide-deck file types.
+
+    Thin typed view over `get_uploads` — same Playwright path, just narrowed
+    to lecture-style file extensions.
+
+    Args:
+        course_id: The Moodle course identifier (numeric string from the URL).
+
+    Returns:
+        Subset of `get_uploads` whose filename or URL ends in a slide extension.
+    """
+    uploads = await get_uploads(course_id)
+    return [
+        u
+        for u in uploads
+        if u["filename"].lower().endswith(SLIDE_EXTENSIONS)
+        or u["url"].lower().rsplit("?", 1)[0].endswith(SLIDE_EXTENSIONS)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Deadlines — MOCK
+#
+# TODO(campus-copilot): replace with Moodle iCal export at
+# /calendar/export.php — gives due_at/title/course_id without DOM scraping.
+# Tracked as a follow-up ticket.
+# ---------------------------------------------------------------------------
+
+
+_MOCK_DEADLINES: dict[str, list[dict[str, Any]]] = {
+    "moodle-IN2346": [
+        {
+            "deadline_id": "dl-idl-hw1",
+            "title": "Homework 1 — Neural Network Implementation",
+            "due_at": "2026-04-25T23:59:00+02:00",
+            "weight": 0.15,
+            "source": "moodle",
+        },
+        {
+            "deadline_id": "dl-idl-hw2",
+            "title": "Homework 2 — CNN from Scratch",
+            "due_at": "2026-05-09T23:59:00+02:00",
+            "weight": 0.15,
+            "source": "moodle",
+        },
+        {
+            "deadline_id": "dl-idl-midterm",
+            "title": "Midterm Exam",
+            "due_at": "2026-05-20T10:00:00+02:00",
+            "weight": 0.30,
+            "source": "tumonline",
+        },
+    ],
+    "moodle-IN2064": [
+        {
+            "deadline_id": "dl-ml-hw1",
+            "title": "Exercise Sheet 1 — Linear Regression",
+            "due_at": "2026-04-22T23:59:00+02:00",
+            "weight": 0.10,
+            "source": "moodle",
+        },
+        {
+            "deadline_id": "dl-ml-project",
+            "title": "Project Proposal Submission",
+            "due_at": "2026-05-01T23:59:00+02:00",
+            "weight": 0.20,
+            "source": "moodle",
+        },
+    ],
+    "moodle-IN2349": [
+        {
+            "deadline_id": "dl-adl-paper",
+            "title": "Paper Review — Attention Is All You Need",
+            "due_at": "2026-04-28T23:59:00+02:00",
+            "weight": 0.10,
+            "source": "moodle",
+        },
+    ],
+}
+
+
+async def get_deadlines(
+    *,
+    student_id: str,
+    course_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return upcoming deadlines for a student, optionally filtered by course.
+
+    Currently returns curated mock data — Moodle has no first-class deadline
+    feed in this scraper yet. See module-level TODO for the planned iCal-based
+    replacement.
+
+    Args:
+        student_id: Student identifier (unused by the mock; logged only).
+        course_id: Optional course filter. Unknown course returns [].
+
+    Returns:
+        List of deadline dicts sorted by `due_at`.
+    """
+    logger.info("moodle_get_deadlines_mock", student_id=student_id, course_id=course_id)
+
+    if course_id is not None:
+        return list(_MOCK_DEADLINES.get(course_id, []))
+
+    all_deadlines: list[dict[str, Any]] = []
+    for deadlines in _MOCK_DEADLINES.values():
+        all_deadlines.extend(deadlines)
+    return sorted(all_deadlines, key=lambda d: d["due_at"])
+
+
 async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
     """Fetch recent uploads/resources from a specific course page."""
     settings = get_settings()
@@ -385,3 +499,18 @@ async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
     finally:
         await context.close()
         await pw.stop()
+
+
+async def get_slides(course_id: str) -> list[dict[str, Any]]:
+    """Get lecture slides for a course. Stub — not yet implemented."""
+    logger.warning("get_slides_not_implemented", course_id=course_id)
+    return []
+
+
+async def get_deadlines(
+    student_id: str = "",
+    course_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Get upcoming deadlines. Stub — not yet implemented."""
+    logger.warning("get_deadlines_not_implemented", student_id=student_id, course_id=course_id)
+    return []

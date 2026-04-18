@@ -1,3 +1,6 @@
+# Google Calendar OAuth token (contains secrets)
+.gcal_token.json
+
 # Python
 __pycache__/
 *.py[cod]
@@ -44,6 +47,13 @@ Thumbs.db
 
 # Node (frontend)
 node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Cursor / Claude Code local settings & skills
+.cursor/
+.claude/
+skills-lock.json

@@ -32,6 +32,13 @@ class StudentRow(Base):
     priorities: Mapped[dict[str, int]] = mapped_column(JSONB, default=dict)
     google_calendar_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     tum_credentials: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # User-applied corrections to the regex-derived course metadata in
+    # `src/api/pipeline.py::_parse_download_folder`.  Keyed by Cognee dataset
+    # name so the underlying S3 prefix and quiz/flashcard history stay stable.
+    # Shape: { "<dataset_name>": {"semester": "WiSe 2025/26"} }
+    course_overrides: Mapped[dict[str, dict[str, str]]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
 
     courses: Mapped[list[CourseRow]] = relationship(back_populates="student")
     bookings: Mapped[list[BookingRow]] = relationship(back_populates="student")
@@ -67,17 +74,6 @@ class LectureRow(Base):
     reviewed: Mapped[bool] = mapped_column(default=False)
 
     course: Mapped[CourseRow] = relationship(back_populates="lectures")
-    quiz_results: Mapped[list[QuizResultRow]] = relationship(back_populates="lecture")
-
-
-class QuizResultRow(Base):
-    __tablename__ = "quiz_results"
-
-    lecture_id: Mapped[str] = mapped_column(ForeignKey("lectures.id"))
-    score: Mapped[float] = mapped_column(Float)
-    questions: Mapped[list[dict[str, str]]] = mapped_column(JSONB, default=list)
-
-    lecture: Mapped[LectureRow] = relationship(back_populates="quiz_results")
 
 
 class DeadlineRow(Base):
@@ -151,14 +147,16 @@ class StudentConceptProgressRow(Base):
 
     __tablename__ = "student_concept_progress"
 
-    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"))
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
     core_concept: Mapped[str] = mapped_column(String(500))
     mastery_score: Mapped[float] = mapped_column(Float, default=0.0)
     exercises_completed: Mapped[int] = mapped_column(Integer, default=0)
     quizzes_taken: Mapped[int] = mapped_column(Integer, default=0)
     quizzes_passed: Mapped[int] = mapped_column(Integer, default=0)
     last_activity: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    manual_mastery: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mastery_sources: Mapped[dict[str, float]] = mapped_column(JSONB, default=dict)
 
     __table_args__ = (
         Index(
@@ -169,3 +167,31 @@ class StudentConceptProgressRow(Base):
             unique=True,
         ),
     )
+
+
+class QuizAttemptRow(Base):
+    """Records a student's quiz attempt with per-question answers."""
+
+    __tablename__ = "quiz_attempts"
+
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
+    core_concepts: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    question_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    answers: Mapped[dict[str, dict[str, str]]] = mapped_column(JSONB, default=dict)
+    score: Mapped[float] = mapped_column(Float)
+
+    __table_args__ = (Index("ix_quiz_attempts_student_course", "student_id", "course_id"),)
+
+
+class FlashcardAttemptRow(Base):
+    """Records a student's flashcard review session with per-card ratings."""
+
+    __tablename__ = "flashcard_attempts"
+
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
+    core_concepts: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    card_ratings: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
+
+    __table_args__ = (Index("ix_flashcard_attempts_student_course", "student_id", "course_id"),)

@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     bedrock_haiku_model_id: str = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
     bedrock_titan_embed_model_id: str = "amazon.titan-embed-text-v2:0"
 
-    # Cognee
+    # Cognee Cloud
     cognee_api_key: str = ""
     cognee_api_url: str = "https://api.cognee.ai"
     cognee_dataset_prefix: str = "course_"
@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     google_oauth_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
+    google_calendar_mode: Literal["mock", "live"] = "mock"
 
     # S3
     s3_bucket: str = "campus-copilot-demo"

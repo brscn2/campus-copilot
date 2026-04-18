@@ -13,24 +13,23 @@ from src.agents.academic.prompts import ACADEMIC_SYSTEM
 from src.agents.academic.state import AcademicState
 from src.agents.academic.tools import (
     book_room,
+    draft_thesis_email,
+    get_deadlines,
+    get_lecture_slides,
     get_prerequisites,
+    get_professor_contact,
     get_progress,
     list_course_uploads,
     list_moodle_courses,
     search_lectures,
     search_rooms,
-    take_quiz,
-    draft_thesis_email,
-    get_deadlines,
-    get_lecture_slides,
-    get_my_courses,
-    get_professor_contact,
-    search_rooms,
     search_thesis_opportunities,
+    take_quiz,
 )
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
+from src.lib.message_hygiene import sanitize_tool_messages
 
 logger = get_logger(__name__)
 
@@ -43,11 +42,11 @@ TOOLS = [
     get_prerequisites,
     list_moodle_courses,
     list_course_uploads,
+    get_lecture_slides,
+    get_deadlines,
     search_thesis_opportunities,
     get_professor_contact,
     draft_thesis_email,
-    get_my_courses,
-    get_lecture_slides,
     get_deadlines,
 ]
 
@@ -59,10 +58,12 @@ def _build_graph() -> StateGraph[AcademicState]:
         system_prompt = ACADEMIC_SYSTEM.format(
             today=date.today().isoformat(),
             student_id=state["student_id"],
+            memory_section=state.get("memory_section", ""),
         )
         llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024, system=system_prompt)
         llm_with_tools = llm.bind_tools(TOOLS)
-        response = await llm_with_tools.ainvoke(state["messages"])
+        sanitized = sanitize_tool_messages(state["messages"])
+        response = await llm_with_tools.ainvoke(sanitized)
         return {"messages": [response]}
 
     def should_continue(state: AcademicState) -> str:
@@ -94,18 +95,36 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     Returns:
         AgentOutput with the response message and any proposed actions.
     """
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
     logger.info(
         "academic_agent_run",
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        history_len=len(agent_input.history),
     )
 
+    # Limit history to last 10 messages to avoid Bedrock message ordering issues
+    recent_history = agent_input.history[-10:]
+    history_msgs: list[BaseMessage] = []
+    for turn in recent_history:
+        if turn["role"] == "user":
+            history_msgs.append(HumanMessage(content=turn["content"]))
+        else:
+            history_msgs.append(AIMessage(content=turn["content"]))
+
+    memory_items: list[str] = agent_input.context.get("memory", [])
+    memory_section = ""
+    if memory_items:
+        memory_section = "\n## What I Remember About You\n" + "\n".join(
+            f"- {item}" for item in memory_items
+        )
+
     initial_state = AcademicState(
-        messages=[HumanMessage(content=agent_input.query)],
+        messages=[*history_msgs, HumanMessage(content=agent_input.query)],  # type: ignore[list-item]
         student_id=agent_input.student_id,
         session_id=agent_input.session_id,
+        memory_section=memory_section,
         pending_action=None,
     )
 

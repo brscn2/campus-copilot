@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(python -c \"import cognee; print\\(dir\\(cognee\\)\\)\")",
+      "Bash(curl -s https://docs.cognee.ai/llms.txt)",
+      "WebFetch(domain:docs.cognee.ai)",
+      "Bash(uv sync *)"
+    ]
+  }
+}

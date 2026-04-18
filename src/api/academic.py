@@ -15,7 +15,7 @@ router = APIRouter(prefix="/academic", tags=["academic"])
 
 @router.get("/courses")
 async def list_courses(semester: str | None = None) -> list[dict[str, Any]]:
-    """List enrolled Moodle courses."""
+    """List enrolled Moodle courses, optionally filtered by semester."""
     return await get_courses(semester=semester)
 
 

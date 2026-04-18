@@ -12,16 +12,15 @@ from langchain_core.tools import tool
 from src.integrations.library import book_room as _book_room
 from src.integrations.library import search_rooms as _search_rooms
 from src.integrations.moodle import get_courses as _get_courses
+from src.integrations.moodle import get_deadlines as _get_deadlines
+from src.integrations.moodle import get_slides as _get_slides
 from src.integrations.moodle import get_uploads as _get_uploads
+from src.integrations.tumonline import get_professor_info as _get_professor_info
+from src.integrations.tumonline import search_thesis_opportunities as _search_thesis
 from src.lib.memory import get_core_concepts as _get_core_concepts
 from src.lib.memory import get_prerequisites as _get_prerequisites
 from src.lib.memory import query_course_knowledge as _query_course_knowledge
-from src.lib.quiz import list_available_quizzes as _list_quizzes
-from src.lib.quiz import load_quiz as _load_quiz
-from src.integrations.moodle import get_deadlines as _get_deadlines
-from src.integrations.moodle import get_slides as _get_slides
-from src.integrations.tumonline import get_professor_info as _get_professor_info
-from src.integrations.tumonline import search_thesis_opportunities as _search_thesis
+from src.lib.s3 import list_objects as _list_s3_objects
 
 
 @tool
@@ -62,12 +61,29 @@ async def book_room(
         end: ISO datetime for booking end.
         student_id: The student making the booking.
     """
-    return await _book_room(
+    from datetime import datetime
+
+    result = await _book_room(
         room_id=room_id,
         start=start,
         end=end,
         student_id=student_id,
     )
+
+    from src.cal.orchestrator import register_booking
+
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    booking = await register_booking(
+        student_id=student_id,
+        kind="study_room",
+        title=f"Study room: {room_id}",
+        starts_at=start_dt,
+        ends_at=end_dt,
+        location=room_id,
+        agent="academic",
+    )
+    return {**result, "calendar": booking}
 
 
 @tool
@@ -98,11 +114,14 @@ async def get_progress(
         course_id: The course identifier.
     """
     concepts = await _get_core_concepts(course_id)
-    quizzes = _list_quizzes(course_id)
+    quiz_objects = await _list_s3_objects(f"quizzes/course_{course_id}/")
+    available_quizzes = [
+        obj["key"].rsplit("/", 1)[-1].replace(".json", "").replace("_", " ") for obj in quiz_objects
+    ]
     return {
         "course_id": course_id,
         "core_concepts": concepts,
-        "available_quizzes": quizzes,
+        "available_quizzes": available_quizzes,
     }
 
 
@@ -122,8 +141,16 @@ async def take_quiz(
         core_concept: The core concept to quiz on (e.g. 'Modularity').
         num_questions: Number of questions to serve (default 5).
     """
-    quiz = _load_quiz(course_id, core_concept)
-    if quiz is None:
+    import json
+
+    from src.lib.content_generator import _safe_filename
+    from src.lib.s3 import download_file
+
+    key = f"quizzes/course_{course_id}/{_safe_filename(core_concept)}.json"
+    try:
+        data = await download_file(key)
+        quiz = json.loads(data)
+    except Exception:
         return {"error": f"No quiz found for '{core_concept}'. Try running cognify first."}
 
     questions = quiz.get("questions", [])
@@ -136,6 +163,10 @@ async def take_quiz(
         "core_concept": core_concept,
         "questions": served,
         "total_available": len(questions),
+    }
+
+
+@tool
 async def search_thesis_opportunities(
     keywords: list[str] | None = None,
     chair: str | None = None,
@@ -240,23 +271,6 @@ async def list_course_uploads(
         moodle_course_id: The Moodle course ID (numeric string).
     """
     return await _get_uploads(moodle_course_id)
-async def get_my_courses(student_id: str) -> list[dict[str, Any]]:
-    """Get the student's enrolled Moodle courses.
-
-    Args:
-        student_id: The student identifier.
-    """
-    return await _get_courses(student_id=student_id)
-
-
-@tool
-async def get_lecture_slides(course_id: str) -> list[dict[str, Any]]:
-    """Get lecture slides for a course, including AI-generated summaries.
-
-    Args:
-        course_id: The Moodle course identifier from get_my_courses results.
-    """
-    return await _get_slides(course_id=course_id)
 
 
 @tool
