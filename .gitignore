@@ -11,6 +11,9 @@ build/
 .venv/
 venv/
 .uv/
+downloads/
+extracted/
+.sessions/
 
 # Environment
 .env
@@ -31,6 +34,9 @@ htmlcov/
 
 # LLM cache
 .llm_cache/
+
+# Quiz cache
+.quiz_cache/
 
 # OS
 .DS_Store

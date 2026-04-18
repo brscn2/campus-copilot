@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # AWS
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    aws_region: str = "eu-north-1"
+    aws_region: str = "eu-central-1"
 
     # Bedrock
     bedrock_region: str = "eu-north-1"
@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     # Cognee
     cognee_api_key: str = ""
     cognee_api_url: str = "https://api.cognee.ai"
+    cognee_dataset_prefix: str = "course_"
+
+    # Moodle scraper
+    tum_username: str = ""
+    tum_password: str = ""
+    moodle_headless: bool = True
+    moodle_session_dir: str = ".sessions"
+    moodle_download_dir: str = "downloads"
+    moodle_extract_dir: str = "extracted"
+
+    # Quiz
+    quiz_storage_dir: str = ".quiz_cache"
     cognee_tenant_id: str = ""
     cognee_llm_provider: str = "bedrock"
     cognee_llm_model: str = "bedrock/eu.anthropic.claude-sonnet-4-6-20250514-v1:0"
