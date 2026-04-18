@@ -53,12 +53,12 @@ async def run_orchestrator(
     Returns:
         AgentOutput from the dispatched specialist agent.
     """
-    history = session_store.get_history(session_id)
+    history = await session_store.get_history(session_id)
     agent_name = await classify_intent(query)
 
     memories = await query_memory(user_id=student_id, query=query, top_k=3)
     memory_context: dict[str, Any] = {
-        "memory": [m["text"] for m in memories] if memories else [],
+        "memory": [m["content"] for m in memories] if memories else [],
     }
 
     logger.info(
@@ -85,15 +85,16 @@ async def run_orchestrator(
     )
     result: AgentOutput = await runner(agent_input)
 
-    session_store.append(
+    await session_store.append(
         session_id,
+        student_id,
         [
             {"role": "user", "content": query},
             {"role": "assistant", "content": result.message},
         ],
     )
 
-    history_after = session_store.get_history(session_id)
+    history_after = await session_store.get_history(session_id)
     if len(history_after) >= BATCH_SIZE and len(history_after) % BATCH_SIZE == 0:
         recent_turns = history_after[-BATCH_SIZE:]
         asyncio.create_task(extract_and_remember(student_id=student_id, turns=recent_turns))

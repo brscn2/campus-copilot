@@ -1,10 +1,11 @@
-"""Cognee Cloud memory layer — search and retrieval via cogwit-sdk."""
+"""Cognee Cloud memory layer — cogwit SDK for course queries, HTTP for student memory."""
 
 from __future__ import annotations
 
 import os
 from typing import Any
 
+import httpx
 import structlog
 
 from src.config import get_settings
@@ -299,8 +300,6 @@ async def add_to_memory(
     settings = get_settings()
     logger.info("memory_add", user_id=user_id, content_length=len(content))
 
-    import httpx
-
     url = f"{settings.cognee_api_url}/api/v1/add"
     headers = {"X-Api-Key": settings.cognee_api_key}
 
@@ -321,6 +320,9 @@ async def query_memory(
     top_k: int = 3,
 ) -> list[dict[str, Any]]:
     """Query the knowledge graph for relevant student context.
+
+    Uses the HTTP API with dataset scoping so results are isolated to this
+    student's memory, not the entire tenant.
 
     Args:
         user_id: Student identifier for namespace isolation.

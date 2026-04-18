@@ -138,6 +138,50 @@ def get_job_status(job_id: str) -> dict[str, Any] | None:
     return _jobs.get(job_id)
 
 
+STUDENT_COGNIFY_PROMPT = """\
+Analyze the accumulated facts about this student. Build a lightweight knowledge graph:
+
+- **Interests**: Academic topics, research areas, hobbies.
+- **Skills**: Programming languages, tools, frameworks.
+- **Goals**: Career aspirations, degree targets, thesis directions.
+- **Preferences**: Campus locations, scheduling patterns, communication style.
+- **Constraints**: Time limitations, prerequisites not yet met.
+
+Let relationships emerge naturally — connect interests to goals, skills to interests, \
+constraints to preferences. Do not force a rigid hierarchy.
+"""
+
+
+async def trigger_student_cognify(student_id: str) -> None:
+    """Trigger a lightweight cognify on a student's memory dataset.
+
+    Runs best-effort: failures are logged but do not propagate.
+
+    Args:
+        student_id: Student identifier (used to build dataset name).
+    """
+    settings = get_settings()
+    dataset = f"student_{student_id}"
+
+    logger.info("student_cognify_start", student_id=student_id, dataset=dataset)
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{settings.cognee_api_url}/api/v1/cognify",
+                json={
+                    "datasets": [dataset],
+                    "customPrompt": STUDENT_COGNIFY_PROMPT,
+                },
+                headers={"X-Api-Key": settings.cognee_api_key},
+            )
+            resp.raise_for_status()
+
+        logger.info("student_cognify_completed", student_id=student_id)
+    except Exception:
+        logger.warning("student_cognify_failed", student_id=student_id, exc_info=True)
+
+
 async def upload_file_to_cognee(
     course_id: str,
     file_content: bytes,

@@ -7,6 +7,7 @@ import json
 import structlog
 
 from src.lib.bedrock import get_sonnet_model_id, invoke_model
+from src.lib.cognify import trigger_student_cognify
 from src.lib.memory import add_to_memory
 
 logger = structlog.get_logger(__name__)
@@ -66,6 +67,8 @@ async def extract_and_remember(
         logger.info("memory_extract_facts", student_id=student_id, count=len(facts))
         for fact in facts:
             await add_to_memory(user_id=student_id, content=fact)
+
+        await trigger_student_cognify(student_id)
 
     except Exception:
         logger.warning("memory_extract_failed", student_id=student_id, exc_info=True)
