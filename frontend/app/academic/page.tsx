@@ -32,7 +32,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { courses, deadlines, theses, studyRooms } from "@/lib/mock-data"
-import { runFullPipeline, listCourseFiles, getFileUrl, listSyncedCourses, type CourseFile, type SyncedCourse } from "@/lib/api"
+import {
+  runFullPipeline,
+  listCourseFiles,
+  getFileUrl,
+  listSyncedCourses,
+  requestQuiz,
+  requestFlashcards,
+  type CourseFile,
+  type SyncedCourse,
+  type QuizQuestion,
+  type FlashcardItem,
+} from "@/lib/api"
 import { AgentBadge } from "@/components/agent-badge"
 import {
   ArrowRight,
@@ -229,6 +240,12 @@ function CoursesTab() {
 function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; onClose: () => void }) {
   const [files, setFiles] = React.useState<CourseFile[]>([])
   const [filesLoading, setFilesLoading] = React.useState(false)
+  const [quizOpen, setQuizOpen] = React.useState(false)
+  const [flashcardOpen, setFlashcardOpen] = React.useState(false)
+  const [quizQuestions, setQuizQuestions] = React.useState<QuizQuestion[]>([])
+  const [flashcards, setFlashcards] = React.useState<FlashcardItem[]>([])
+  const [loadingQuiz, setLoadingQuiz] = React.useState(false)
+  const [loadingFlashcards, setLoadingFlashcards] = React.useState(false)
 
   React.useEffect(() => {
     if (course) {
@@ -249,82 +266,154 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
     mastery = 30 + (Math.abs(hash) % 55)
   }
 
+  const handleStartQuiz = async () => {
+    if (!course) return
+    setLoadingQuiz(true)
+    try {
+      const session = await requestQuiz("demo", course.dataset_name, 5)
+      setQuizQuestions(session.questions)
+      setQuizOpen(true)
+    } catch (err) {
+      toast.error(`Failed to load quiz: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } finally {
+      setLoadingQuiz(false)
+    }
+  }
+
+  const handleStartFlashcards = async () => {
+    if (!course) return
+    setLoadingFlashcards(true)
+    try {
+      const session = await requestFlashcards("demo", course.dataset_name, 10)
+      setFlashcards(session.cards)
+      setFlashcardOpen(true)
+    } catch (err) {
+      toast.error(`Failed to load flashcards: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } finally {
+      setLoadingFlashcards(false)
+    }
+  }
+
   return (
-    <Dialog open={!!course} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
-        {course ? (
-          <>
-            <DialogHeader>
-              {course.course_code && (
-                <div className="font-mono text-xs text-primary">{course.course_code}</div>
-              )}
-              <DialogTitle className="text-xl">{course.display_name}</DialogTitle>
-              <DialogDescription>
-                {course.semester} · {course.pdf_count} PDFs synced from Moodle
-              </DialogDescription>
-            </DialogHeader>
+    <>
+      <Dialog open={!!course && !quizOpen && !flashcardOpen} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-2xl">
+          {course ? (
+            <>
+              <DialogHeader>
+                {course.course_code && (
+                  <div className="font-mono text-xs text-primary">{course.course_code}</div>
+                )}
+                <DialogTitle className="text-xl">{course.display_name}</DialogTitle>
+                <DialogDescription>
+                  {course.semester} · {course.pdf_count} PDFs synced from Moodle
+                </DialogDescription>
+              </DialogHeader>
 
-            <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
-              <div>
-                <div className="text-xs text-muted-foreground">Mastery</div>
-                <div className="text-lg font-semibold tabular-nums">{mastery}%</div>
-              </div>
-              <Progress value={mastery} className="h-2 w-32" />
-            </div>
-
-            {filesLoading && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading files…
-              </div>
-            )}
-
-            {files.length > 0 && (
-              <div>
-                <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
-                <div className="flex flex-col gap-1.5">
-                  {files.map((f) => {
-                    const filename = f.key.split("/").pop() ?? f.key
-                    return (
-                      <div
-                        key={f.key}
-                        className="flex items-center justify-between rounded-lg border border-border p-2.5"
-                      >
-                        <div className="flex items-center gap-2 text-sm">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          <span>{filename}</span>
-                          <span className="text-xs text-muted-foreground">
-                            ({(f.size / 1024).toFixed(0)} KB)
-                          </span>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="gap-1.5"
-                          onClick={async () => {
-                            const res = await getFileUrl(course.dataset_name, filename)
-                            window.open(res.url, "_blank")
-                          }}
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Download
-                        </Button>
-                      </div>
-                    )
-                  })}
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Mastery</div>
+                  <div className="text-lg font-semibold tabular-nums">{mastery}%</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleStartFlashcards}
+                    disabled={loadingFlashcards}
+                  >
+                    {loadingFlashcards ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Layers className="h-3.5 w-3.5" />
+                    )}
+                    Flashcards
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleStartQuiz}
+                    disabled={loadingQuiz}
+                  >
+                    {loadingQuiz ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    Start quiz
+                  </Button>
                 </div>
               </div>
-            )}
 
-            {!filesLoading && files.length === 0 && (
-              <div className="text-sm text-muted-foreground">
-                No files uploaded yet. Run the Moodle sync to pull lecture slides.
-              </div>
-            )}
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
+              {filesLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading files…
+                </div>
+              )}
+
+              {files.length > 0 && (
+                <div>
+                  <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
+                  <div className="flex flex-col gap-1.5">
+                    {files.map((f) => {
+                      const filename = f.key.split("/").pop() ?? f.key
+                      return (
+                        <div
+                          key={f.key}
+                          className="flex items-center justify-between rounded-lg border border-border p-2.5"
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span>{filename}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({(f.size / 1024).toFixed(0)} KB)
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="gap-1.5"
+                            onClick={async () => {
+                              const res = await getFileUrl(course.dataset_name, filename)
+                              window.open(res.url, "_blank")
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {!filesLoading && files.length === 0 && (
+                <div className="text-sm text-muted-foreground">
+                  No files uploaded yet. Run the Moodle sync to pull lecture slides.
+                </div>
+              )}
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <LiveQuizDialog
+        open={quizOpen}
+        onClose={() => setQuizOpen(false)}
+        questions={quizQuestions}
+        courseCode={course?.course_code ?? course?.display_name ?? ""}
+      />
+
+      <FlashcardDialog
+        open={flashcardOpen}
+        onClose={() => setFlashcardOpen(false)}
+        cards={flashcards}
+        courseCode={course?.course_code ?? course?.display_name ?? ""}
+      />
+    </>
   )
 }
 
@@ -561,6 +650,247 @@ function QuizDialog({ open, onClose, course }: { open: boolean; onClose: () => v
               Submit
             </Button>
           </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function LiveQuizDialog({
+  open,
+  onClose,
+  questions,
+  courseCode,
+}: {
+  open: boolean
+  onClose: () => void
+  questions: QuizQuestion[]
+  courseCode: string
+}) {
+  const [answers, setAnswers] = React.useState<Record<number, number>>({})
+  const [submitted, setSubmitted] = React.useState(false)
+
+  React.useEffect(() => {
+    if (open) {
+      setAnswers({})
+      setSubmitted(false)
+    }
+  }, [open])
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            Quiz · {courseCode}
+          </DialogTitle>
+          <DialogDescription>
+            {questions.length} questions across {[...new Set(questions.map((q) => q.core_concept))].length} concepts
+          </DialogDescription>
+        </DialogHeader>
+        {questions.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No quiz questions available. Run Moodle sync + Cognify first.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-5">
+            {questions.map((item, i) => (
+              <div key={item.id}>
+                <div className="mb-1 flex items-center gap-2">
+                  <Badge variant="secondary" className="text-[10px] font-normal">
+                    {item.core_concept}
+                  </Badge>
+                  <Badge variant="outline" className="text-[10px] font-normal">
+                    {item.difficulty}
+                  </Badge>
+                </div>
+                <div className="mb-2 text-sm font-medium">
+                  {i + 1}. {item.question}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {item.options.map((opt, oi) => {
+                    const picked = answers[i] === oi
+                    return (
+                      <label
+                        key={oi}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-2 rounded-lg border border-border p-2.5 text-sm transition-colors",
+                          picked && "border-primary bg-primary/5",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name={`lq-${i}`}
+                          className="accent-primary"
+                          checked={picked}
+                          onChange={() => setAnswers((a) => ({ ...a, [i]: oi }))}
+                          disabled={submitted}
+                        />
+                        {opt}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter className="sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            {submitted
+              ? "Submitted!"
+              : `${Object.keys(answers).length} / ${questions.length} answered`}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Close
+            </Button>
+            {!submitted && questions.length > 0 && (
+              <Button
+                onClick={() => {
+                  setSubmitted(true)
+                  toast.success("Quiz submitted!")
+                }}
+                disabled={Object.keys(answers).length < questions.length}
+              >
+                Submit
+              </Button>
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FlashcardDialog({
+  open,
+  onClose,
+  cards,
+  courseCode,
+}: {
+  open: boolean
+  onClose: () => void
+  cards: FlashcardItem[]
+  courseCode: string
+}) {
+  const [currentIndex, setCurrentIndex] = React.useState(0)
+  const [flipped, setFlipped] = React.useState(false)
+  const [ratings, setRatings] = React.useState<Record<string, string>>({})
+
+  React.useEffect(() => {
+    if (open) {
+      setCurrentIndex(0)
+      setFlipped(false)
+      setRatings({})
+    }
+  }, [open])
+
+  const card = cards[currentIndex]
+  const done = currentIndex >= cards.length
+
+  const handleRate = (rating: string) => {
+    if (!card) return
+    setRatings((prev) => ({ ...prev, [card.id]: rating }))
+    setFlipped(false)
+    setCurrentIndex((i) => i + 1)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-primary" />
+            Flashcards · {courseCode}
+          </DialogTitle>
+          <DialogDescription>
+            {cards.length} cards · {done ? "Done!" : `${currentIndex + 1} / ${cards.length}`}
+          </DialogDescription>
+        </DialogHeader>
+
+        {cards.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            No flashcards available. Run Moodle sync + Cognify first.
+          </div>
+        ) : done ? (
+          <div className="py-8 text-center">
+            <div className="text-2xl font-semibold">Session complete!</div>
+            <div className="mt-2 text-sm text-muted-foreground">
+              {Object.values(ratings).filter((r) => r === "easy").length} easy ·{" "}
+              {Object.values(ratings).filter((r) => r === "medium").length} medium ·{" "}
+              {Object.values(ratings).filter((r) => r === "hard").length} hard
+            </div>
+          </div>
+        ) : card ? (
+          <>
+            <div className="mb-1 flex items-center gap-2">
+              <Badge variant="secondary" className="text-[10px] font-normal">
+                {card.core_concept}
+              </Badge>
+              <Badge variant="outline" className="text-[10px] font-normal">
+                {card.difficulty}
+              </Badge>
+            </div>
+
+            <button
+              onClick={() => setFlipped(!flipped)}
+              className="min-h-[180px] w-full rounded-xl border border-border bg-muted/30 p-6 text-left transition-all hover:shadow-sm"
+            >
+              {!flipped ? (
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Question
+                  </div>
+                  <div className="text-base font-medium">{card.front}</div>
+                  <div className="mt-4 text-xs text-primary">Click to reveal answer</div>
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Answer
+                  </div>
+                  <div className="text-base">{card.back}</div>
+                </div>
+              )}
+            </button>
+
+            {flipped && (
+              <div className="flex items-center justify-center gap-3">
+                <div className="text-xs text-muted-foreground">How well did you know this?</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-destructive/50 text-destructive hover:bg-destructive/10"
+                  onClick={() => handleRate("hard")}
+                >
+                  Hard
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleRate("medium")}
+                >
+                  Medium
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-career/50 text-career hover:bg-career-soft"
+                  onClick={() => handleRate("easy")}
+                >
+                  Easy
+                </Button>
+              </div>
+            )}
+          </>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {done ? "Done" : "Close"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

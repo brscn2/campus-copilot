@@ -79,3 +79,71 @@ export interface JobStatus {
 export function getCognifyStatus(jobId: string): Promise<JobStatus> {
   return request(`/api/cognify/status/${encodeURIComponent(jobId)}`)
 }
+
+// --- Learning (quiz, flashcards, progress) ---
+
+export interface QuizQuestion {
+  id: string
+  core_concept: string
+  leaf_concepts: string[]
+  question: string
+  options: string[]
+  difficulty: string
+}
+
+export interface QuizSession {
+  course_id: string
+  core_concepts: string[]
+  questions: QuizQuestion[]
+  total_available: number
+}
+
+export function requestQuiz(
+  studentId: string,
+  courseId: string,
+  numQuestions: number = 10,
+  coreConcepts: string[] = [],
+): Promise<QuizSession> {
+  return request("/api/learning/quiz", {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: studentId,
+      course_id: courseId,
+      num_questions: numQuestions,
+      core_concepts: coreConcepts,
+    }),
+  })
+}
+
+export interface FlashcardItem {
+  id: string
+  core_concept: string
+  leaf_concepts: string[]
+  front: string
+  back: string
+  difficulty: string
+}
+
+export interface FlashcardSession {
+  course_id: string
+  core_concepts: string[]
+  cards: FlashcardItem[]
+  total_available: number
+}
+
+export function requestFlashcards(
+  studentId: string,
+  courseId: string,
+  numCards: number = 15,
+  coreConcepts: string[] = [],
+): Promise<FlashcardSession> {
+  return request("/api/learning/flashcards", {
+    method: "POST",
+    body: JSON.stringify({
+      student_id: studentId,
+      course_id: courseId,
+      num_cards: numCards,
+      core_concepts: coreConcepts,
+    }),
+  })
+}

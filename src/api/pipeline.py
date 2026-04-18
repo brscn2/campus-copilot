@@ -117,8 +117,8 @@ class SyncedCoursesResponse(BaseModel):
     courses: list[SyncedCourse]
 
 
-_CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?")
-_SEM_RE = re.compile(r"((?:SoSe|WiSe)\s+\d{4}(?:[_/]\d{2,4})?)")
+_CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?", re.IGNORECASE)
+_SEM_RE = re.compile(r"((?:SoSe|WiSe|sose|wise)[_ ]*\d{4}(?:[_/ ]\d{2,4})?)", re.IGNORECASE)
 _FACULTY_RE = re.compile(
     r"\s*[_\-]\s*(?:Computation|Studentische|TUM Global|Alumni Office).*",
     re.IGNORECASE,
@@ -131,7 +131,16 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     code = codes[0].upper() if codes else ""
 
     sem_match = _SEM_RE.search(raw_name)
-    semester = sem_match.group(1).replace("_", "/") if sem_match else ""
+    if sem_match:
+        raw_sem = sem_match.group(1).replace("_", " ").strip()
+        if raw_sem[:4].lower() == "wise":
+            semester = "WiSe " + raw_sem[4:].strip().replace(" ", "/")
+        elif raw_sem[:4].lower() == "sose":
+            semester = "SoSe " + raw_sem[4:].strip()
+        else:
+            semester = raw_sem
+    else:
+        semester = ""
 
     name = raw_name
     name = _FACULTY_RE.sub("", name)
@@ -140,6 +149,7 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     name = _SEM_RE.sub("", name)
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"\s{2,}", " ", name).strip(" .,_-")
+    name = name.title() if name == name.lower() else name
 
     return name or raw_name, code, semester
 
@@ -159,37 +169,28 @@ def _build_download_to_extract_map(download_dir: Path) -> dict[str, str]:
 
 @router.get("/synced", response_model=SyncedCoursesResponse)
 async def list_synced_courses() -> SyncedCoursesResponse:
-    """List courses that have been synced (extracted locally)."""
-    from pathlib import Path
+    """List courses that have been synced — reads from S3 slides/ prefix."""
+    from src.lib.s3 import list_objects
 
-    from src.config import get_settings
-
-    settings = get_settings()
-    extract_dir = Path(settings.moodle_extract_dir)
-    download_dir = Path(settings.moodle_download_dir)
-
-    if not extract_dir.exists():
-        return SyncedCoursesResponse(courses=[])
-
-    name_map = _build_download_to_extract_map(download_dir)
+    objects = await list_objects("slides/")
+    course_files: dict[str, int] = {}
+    for obj in objects:
+        parts = obj["key"].split("/")
+        if len(parts) >= 3 and parts[1]:
+            dataset = parts[1]
+            course_files[dataset] = course_files.get(dataset, 0) + 1
 
     courses: list[SyncedCourse] = []
-    for course_dir in sorted(extract_dir.iterdir()):
-        if not course_dir.is_dir():
-            continue
-        dataset = course_dir.name
-        pdfs = list(course_dir.rglob("*.pdf"))
-        s3_prefix = f"slides/{dataset}/"
-        original_name = name_map.get(dataset, dataset)
-        display_name, code, semester = _parse_download_folder(original_name)
+    for dataset, pdf_count in sorted(course_files.items()):
+        display_name, code, semester = _parse_download_folder(dataset)
         courses.append(
             SyncedCourse(
                 dataset_name=dataset,
                 display_name=display_name,
                 course_code=code,
                 semester=semester,
-                pdf_count=len(pdfs),
-                s3_prefix=s3_prefix,
+                pdf_count=pdf_count,
+                s3_prefix=f"slides/{dataset}/",
             )
         )
 
