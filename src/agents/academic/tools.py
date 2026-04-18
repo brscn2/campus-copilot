@@ -21,8 +21,6 @@ from src.lib.memory import get_core_concepts as _get_core_concepts
 from src.lib.memory import get_prerequisites as _get_prerequisites
 from src.lib.memory import query_course_knowledge as _query_course_knowledge
 from src.lib.s3 import list_objects as _list_s3_objects
-from src.lib.quiz import list_available_quizzes as _list_quizzes
-from src.lib.quiz import load_quiz as _load_quiz
 
 
 @tool
