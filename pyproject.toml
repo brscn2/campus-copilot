@@ -22,6 +22,9 @@ dependencies = [
     "cogwit-sdk>=0.1.0",
     "sse-starlette>=2.2.0",
     "playwright>=1.49.0",
+    "google-api-python-client>=2.194.0",
+    "google-auth-httplib2>=0.3.1",
+    "google-auth-oauthlib>=1.3.1",
 ]
 
 [project.optional-dependencies]

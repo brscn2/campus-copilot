@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
@@ -125,11 +126,12 @@ async def create_event(request: CreateEventRequest) -> dict[str, Any]:
     starts_at = datetime.fromisoformat(request.starts_at)
     ends_at = datetime.fromisoformat(request.ends_at)
 
-    # Ensure UTC timezone — Google Calendar API requires RFC 3339 with tz
+    # Naive datetimes from the frontend are local time (Europe/Berlin)
+    local_tz = ZoneInfo("Europe/Berlin")
     if starts_at.tzinfo is None:
-        starts_at = starts_at.replace(tzinfo=UTC)
+        starts_at = starts_at.replace(tzinfo=local_tz)
     if ends_at.tzinfo is None:
-        ends_at = ends_at.replace(tzinfo=UTC)
+        ends_at = ends_at.replace(tzinfo=local_tz)
 
     logger.info("calendar_create_event", title=request.title)
     result = await register_booking(

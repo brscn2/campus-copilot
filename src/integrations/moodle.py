@@ -381,3 +381,15 @@ async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
     finally:
         await context.close()
         await pw.stop()
+
+
+async def get_deadlines(
+    student_id: str, course_id: str | None = None
+) -> list[dict[str, Any]]:
+    """Fetch upcoming deadlines. Stub — returns empty list until wired."""
+    return []
+
+
+async def get_slides(course_id: str) -> list[dict[str, Any]]:
+    """Fetch lecture slides for a course. Stub — returns empty list until wired."""
+    return []
