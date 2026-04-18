@@ -1,139 +1,211 @@
-"""Mock ZHS (Zentraler Hochschulsport) integration — sports registration sniper.
+"""ZHS (Zentraler Hochschulsport) Munich integration via MeiliSearch API.
 
-In live mode this would interact with the ZHS booking system via Playwright.
-For the hackathon demo, returns realistic fake data with slot availability.
+Fetches real sport course data from kurse.zhs-muenchen.de.
+Public read access — no authentication required for course discovery.
+Registration requires TUM login (user handles this on the website).
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
-from uuid import uuid4
 
+import httpx
+
+from src.exceptions import TUMSystemUnavailableError
 from src.lib.logging import get_logger
+from src.lib.retry import retry_external
+from src.models.zhs import ZhsCourse, _infer_category, _infer_level, _infer_location
 
 logger = get_logger(__name__)
 
-MOCK_COURSES: list[dict[str, Any]] = [
-    {
-        "course_id": "zhs-bould-01",
-        "name": "Bouldering — Beginner",
-        "category": "climbing",
-        "location": "ZHS Kletteranlage, Olympiapark",
-        "day": "Monday",
-        "time": "18:00-20:00",
-        "instructor": "Maximilian Huber",
-        "spots_total": 20,
-        "spots_available": 0,
-        "price": "35 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-    {
-        "course_id": "zhs-bould-02",
-        "name": "Bouldering — Advanced",
-        "category": "climbing",
-        "location": "ZHS Kletteranlage, Olympiapark",
-        "day": "Wednesday",
-        "time": "18:00-20:00",
-        "instructor": "Maximilian Huber",
-        "spots_total": 15,
-        "spots_available": 2,
-        "price": "35 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-    {
-        "course_id": "zhs-yoga-01",
-        "name": "Yoga — Hatha Flow",
-        "category": "yoga",
-        "location": "ZHS Halle 1, Olympiapark",
-        "day": "Tuesday",
-        "time": "07:30-09:00",
-        "instructor": "Lena Fischer",
-        "spots_total": 30,
-        "spots_available": 5,
-        "price": "25 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-    {
-        "course_id": "zhs-swim-01",
-        "name": "Swimming — Technique Training",
-        "category": "swimming",
-        "location": "Olympia-Schwimmhalle",
-        "day": "Thursday",
-        "time": "12:00-13:30",
-        "instructor": "Stefan Richter",
-        "spots_total": 20,
-        "spots_available": 8,
-        "price": "30 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-    {
-        "course_id": "zhs-box-01",
-        "name": "Boxing — Beginner",
-        "category": "martial_arts",
-        "location": "ZHS Halle 3, Olympiapark",
-        "day": "Friday",
-        "time": "17:00-18:30",
-        "instructor": "Ali Yilmaz",
-        "spots_total": 25,
-        "spots_available": 0,
-        "price": "30 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-    {
-        "course_id": "zhs-bball-01",
-        "name": "Basketball — Open Gym",
-        "category": "ball_sports",
-        "location": "ZHS Halle 2, Olympiapark",
-        "day": "Wednesday",
-        "time": "20:00-22:00",
-        "instructor": "Chris Weber",
-        "spots_total": 30,
-        "spots_available": 12,
-        "price": "20 €/semester",
-        "registration_opens": "2026-04-20T10:00:00+02:00",
-    },
-]
+ZHS_BASE_URL = "https://kurse.zhs-muenchen.de"
+ZHS_SEARCH_URL = f"{ZHS_BASE_URL}/services/search"
+ZHS_API_KEY = "5632a784b8e5e66066307adbeb8e19bb6558fdf2bca26ef35dd3ee98b17e0c1e"
+ZHS_INDEX = "public_offers"
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and collapse whitespace."""
+    cleaned = _HTML_TAG_RE.sub(" ", text)
+    return " ".join(cleaned.split()).strip()
+
+
+_GROUP_SLUG_MAP: dict[str, str] = {
+    "b092c32f-0f8f-4c4c-9ca5-d7e621876b85": "muenchen",
+    "c5c8eebc-2e3e-4e0c-9b4b-8f9f8d8e8e8e": "starnberg",
+    "d6d9ffcd-3f4f-5f1d-0c5c-9g0g9e9f9f9f": "weihenstephan-triesdorf-freising-landshut",
+}
+
+
+def _resolve_group_slug(group_id: str) -> str:
+    """Map a group ID to its URL slug. Falls back to 'muenchen'."""
+    return _GROUP_SLUG_MAP.get(group_id, "muenchen")
+
+
+def _parse_course(hit: dict[str, Any]) -> ZhsCourse:
+    """Convert a MeiliSearch hit into a ZhsCourse model."""
+    name_dict = hit.get("name", {})
+    name_de = name_dict.get("de_DE", "") or name_dict.get("en_EN", "")
+    name = name_de
+
+    desc_dict = hit.get("description") or {}
+    desc_raw = desc_dict.get("de_DE", "") or desc_dict.get("en_EN", "")
+    desc_short = _strip_html(desc_raw)[:300]
+
+    slug_dict = hit.get("slug", {})
+    slug = slug_dict.get("de_DE", "") or slug_dict.get("en_EN", "")
+
+    group_id = ""
+    if hit.get("group") and isinstance(hit["group"], dict):
+        group_id = hit["group"].get("id", "")
+
+    poster_dict = hit.get("poster", {})
+    poster = poster_dict.get("de_DE", "") or poster_dict.get("en_EN", "")
+
+    group_slug = _resolve_group_slug(group_id)
+    url = f"{ZHS_BASE_URL}/de/{group_slug}/{slug}" if slug else ""
+
+    return ZhsCourse(
+        id=hit["id"],
+        name=name,
+        name_de=name_de,
+        description_short=desc_short,
+        slug=slug,
+        group_id=group_id,
+        url=url,
+        poster_url=poster,
+        category=_infer_category(name, desc_short),
+        level=_infer_level(name),
+        location=_infer_location(name),
+    )
+
+
+async def _meili_search(
+    query: str = "",
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    filter_expr: str | None = None,
+) -> dict[str, Any]:
+    """Execute a search against the ZHS MeiliSearch index."""
+    body: dict[str, Any] = {"q": query, "limit": limit, "offset": offset}
+    if filter_expr:
+        body["filter"] = filter_expr
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(
+            f"{ZHS_SEARCH_URL}/indexes/{ZHS_INDEX}/search",
+            json=body,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {ZHS_API_KEY}",
+            },
+        )
+        if response.status_code != 200:
+            raise TUMSystemUnavailableError(f"ZHS search returned {response.status_code}")
+        result: dict[str, Any] = response.json()
+        return result
+
+
+@retry_external()  # type: ignore[untyped-decorator]
 async def search_courses(
     *,
-    category: str | None = None,
-    day: str | None = None,
     keyword: str | None = None,
-    available_only: bool = False,
+    category: str | None = None,
+    location: str | None = None,
+    level: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search for ZHS sport courses.
+    """Search for ZHS sport courses with optional client-side filters.
 
     Args:
-        category: Filter by category (e.g. 'climbing', 'yoga', 'swimming').
-        day: Filter by day of week (e.g. 'Monday').
-        keyword: Keyword to match against course name.
-        available_only: If True, only return courses with open spots.
+        keyword: Text search against course names and descriptions.
+        category: Filter by inferred category (e.g. "Yoga & Mindfulness").
+        location: Filter by campus location (e.g. "Freising", "Munich").
+        level: Filter by level (e.g. "Beginner", "Intermediate", "Advanced").
 
     Returns:
         List of matching ZHS course dicts.
     """
-    logger.info(
-        "zhs_search_courses",
-        category=category,
-        day=day,
-        keyword=keyword,
-        available_only=available_only,
+    logger.info("zhs_search_courses", keyword=keyword, category=category, location=location)
+
+    data = await _meili_search(keyword or "", limit=141)
+    hits = data.get("hits", [])
+
+    courses: list[ZhsCourse] = []
+    for hit in hits:
+        try:
+            courses.append(_parse_course(hit))
+        except (KeyError, ValueError):
+            logger.warning("zhs_parse_error", course_id=hit.get("id"), exc_info=True)
+            continue
+
+    if category:
+        courses = [c for c in courses if c.category == category]
+    if location:
+        courses = [c for c in courses if c.location == location]
+    if level:
+        courses = [c for c in courses if c.level == level]
+
+    return [c.to_tool_dict() for c in courses]
+
+
+@retry_external()  # type: ignore[untyped-decorator]
+async def get_categories() -> list[dict[str, Any]]:
+    """Get all course categories with counts and emoji.
+
+    Returns:
+        List of category dicts with name, emoji, and count.
+    """
+    from src.models.zhs import CATEGORY_EMOJI
+
+    data = await _meili_search("", limit=141)
+    hits = data.get("hits", [])
+
+    counts: dict[str, int] = {}
+    for hit in hits:
+        try:
+            c = _parse_course(hit)
+            counts[c.category] = counts.get(c.category, 0) + 1
+        except (KeyError, ValueError):
+            continue
+
+    return sorted(
+        [
+            {"category": cat, "emoji": CATEGORY_EMOJI.get(cat, "\U0001f3c5"), "count": cnt}
+            for cat, cnt in counts.items()
+        ],
+        key=lambda x: x["count"],
+        reverse=True,
     )
 
-    results: list[dict[str, Any]] = []
-    for course in MOCK_COURSES:
-        if category and course["category"] != category:
-            continue
-        if day and course["day"].lower() != day.lower():
-            continue
-        if keyword and keyword.lower() not in course["name"].lower():
-            continue
-        if available_only and course["spots_available"] == 0:
-            continue
-        results.append(course)
 
-    return results
+@retry_external()  # type: ignore[untyped-decorator]
+async def get_course_detail(slug: str) -> dict[str, Any] | None:
+    """Search for a specific course by slug.
+
+    Args:
+        slug: The course slug (e.g. 'yoga-hatha-1').
+
+    Returns:
+        Course dict if found, None otherwise.
+    """
+    logger.info("zhs_get_course_detail", slug=slug)
+    data = await _meili_search(slug, limit=5)
+    hits = data.get("hits", [])
+
+    for hit in hits:
+        slug_dict = hit.get("slug", {})
+        hit_slug_de = slug_dict.get("de_DE", "")
+        hit_slug_en = slug_dict.get("en_EN", "")
+        if slug in (hit_slug_de, hit_slug_en):
+            return _parse_course(hit).to_tool_dict()
+
+    if hits:
+        return _parse_course(hits[0]).to_tool_dict()
+    return None
 
 
 async def register_for_course(
@@ -141,44 +213,44 @@ async def register_for_course(
     course_id: str,
     student_id: str,
 ) -> dict[str, Any]:
-    """Register a student for a ZHS course.
+    """Direct the student to register on the ZHS website.
+
+    Registration requires TUM login — we provide the link.
 
     Args:
         course_id: The ZHS course identifier.
         student_id: The student making the registration.
 
     Returns:
-        Registration result dict.
+        Registration guidance dict with URL.
     """
-    logger.info(
-        "zhs_register",
-        course_id=course_id,
-        student_id=student_id,
-    )
+    logger.info("zhs_register", course_id=course_id, student_id=student_id)
 
-    matching = [c for c in MOCK_COURSES if c["course_id"] == course_id]
-    if not matching:
-        return {"error": f"Course {course_id} not found", "recoverable": False}
+    data = await _meili_search(course_id, limit=5)
+    hits = data.get("hits", [])
 
-    course = matching[0]
-    if course["spots_available"] == 0:
-        return {
-            "status": "waitlisted",
-            "course_id": course_id,
-            "course_name": course["name"],
-            "message": "No spots available. You have been added to the waitlist.",
-            "registration_id": f"zhs-wait-{uuid4().hex[:8]}",
-        }
+    course_name = "this course"
+    course_url = f"{ZHS_BASE_URL}/en/muenchen"
+
+    for hit in hits:
+        if hit.get("id") == course_id:
+            name_dict = hit.get("name", {})
+            course_name = name_dict.get("en_EN", "") or name_dict.get("de_DE", "")
+            slug_dict = hit.get("slug", {})
+            slug = slug_dict.get("en_EN", "") or slug_dict.get("de_DE", "")
+            if slug:
+                course_url = f"{ZHS_BASE_URL}/en/muenchen/{slug}"
+            break
 
     return {
-        "status": "confirmed",
-        "course_id": course_id,
-        "course_name": course["name"],
-        "day": course["day"],
-        "time": course["time"],
-        "location": course["location"],
-        "registration_id": f"zhs-reg-{uuid4().hex[:8]}",
-        "student_id": student_id,
+        "status": "redirect_to_zhs",
+        "course_name": course_name,
+        "registration_url": course_url,
+        "login_url": f"{ZHS_BASE_URL}/auth/login",
+        "message": (
+            f"To register for {course_name}, visit the ZHS website and log in "
+            f"with your TUM credentials. Registration link: {course_url}"
+        ),
     }
 
 
@@ -187,37 +259,18 @@ async def set_snipe_alert(
     course_id: str,
     student_id: str,
 ) -> dict[str, Any]:
-    """Set a snipe alert for a full ZHS course.
+    """Snipe alerts are not yet supported with real ZHS data.
 
-    When a spot opens or registration starts, the student will be notified.
-
-    Args:
-        course_id: The ZHS course to watch.
-        student_id: The student to notify.
-
-    Returns:
-        Snipe alert confirmation.
+    Returns guidance to check the ZHS website directly.
     """
-    logger.info(
-        "zhs_set_snipe",
-        course_id=course_id,
-        student_id=student_id,
-    )
+    logger.info("zhs_set_snipe", course_id=course_id, student_id=student_id)
 
-    matching = [c for c in MOCK_COURSES if c["course_id"] == course_id]
-    if not matching:
-        return {"error": f"Course {course_id} not found", "recoverable": False}
-
-    course = matching[0]
     return {
-        "status": "snipe_active",
-        "course_id": course_id,
-        "course_name": course["name"],
-        "registration_opens": course["registration_opens"],
-        "alert_id": f"zhs-snipe-{uuid4().hex[:8]}",
+        "status": "not_available",
         "message": (
-            f"Snipe alert set for {course['name']}. "
-            f"Registration opens {course['registration_opens']}. "
-            "You'll be notified when a spot opens up."
+            "Snipe alerts for ZHS courses are not yet available. "
+            "Please check the ZHS website directly for spot availability: "
+            f"{ZHS_BASE_URL}/en/muenchen"
         ),
+        "zhs_url": f"{ZHS_BASE_URL}/en/muenchen",
     }

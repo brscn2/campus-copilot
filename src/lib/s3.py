@@ -122,9 +122,11 @@ async def list_objects(prefix: str) -> list[dict[str, Any]]:
 
     objects: list[dict[str, Any]] = []
     for obj in response.get("Contents", []):
-        objects.append({
-            "key": obj["Key"],
-            "size": obj["Size"],
-            "last_modified": obj["LastModified"].isoformat(),
-        })
+        objects.append(
+            {
+                "key": obj["Key"],
+                "size": obj["Size"],
+                "last_modified": obj["LastModified"].isoformat(),
+            }
+        )
     return objects

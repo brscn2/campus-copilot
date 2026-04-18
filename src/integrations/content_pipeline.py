@@ -74,15 +74,17 @@ def extract_all_zips(
             total_files=len(all_files),
             pdfs=len(pdfs),
         )
-        results.append({
-            "course_name": course_name,
-            "dataset_name": _safe_dataset_name(course_name),
-            "extract_path": str(dest),
-            "total_files": len(all_files),
-            "pdf_count": len(pdfs),
-            "file_paths": [str(f) for f in all_files],
-            "pdf_paths": [str(f) for f in pdfs],
-        })
+        results.append(
+            {
+                "course_name": course_name,
+                "dataset_name": _safe_dataset_name(course_name),
+                "extract_path": str(dest),
+                "total_files": len(all_files),
+                "pdf_count": len(pdfs),
+                "file_paths": [str(f) for f in all_files],
+                "pdf_paths": [str(f) for f in pdfs],
+            }
+        )
 
     return results
 
@@ -177,16 +179,20 @@ async def ingest_all_courses(
             )
             results.append(result)
         except CogneeIngestionError:
-            results.append({
-                "dataset": course["dataset_name"],
-                "status": "error",
-            })
+            results.append(
+                {
+                    "dataset": course["dataset_name"],
+                    "status": "error",
+                }
+            )
         except Exception as exc:
             logger.exception("pipeline_ingest_error", dataset=course["dataset_name"])
-            results.append({
-                "dataset": course["dataset_name"],
-                "status": f"error: {exc}",
-            })
+            results.append(
+                {
+                    "dataset": course["dataset_name"],
+                    "status": f"error: {exc}",
+                }
+            )
 
     return results
 

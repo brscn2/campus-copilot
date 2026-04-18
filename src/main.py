@@ -37,8 +37,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with _engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("startup_db_connected", database=get_settings().database_url.split("@")[-1])
-    except Exception:
-        logger.warning("startup_db_unavailable", exc_info=True)
+    except Exception as exc:
+        logger.warning("startup_db_unavailable", reason=str(exc))
     yield
 
 
@@ -111,15 +111,12 @@ def _register_routes(application: FastAPI) -> None:
     from src.api.cognify import router as cognify_router
     from src.api.health import router as health_router
     from src.api.pipeline import router as pipeline_router
+    from src.api.social import router as social_router
 
     application.include_router(health_router)
     application.include_router(chat_router, prefix="/api")
     application.include_router(cognify_router)
     application.include_router(pipeline_router)
-    from src.api.social import router as social_router
-
-    application.include_router(health_router)
-    application.include_router(chat_router, prefix="/api")
     application.include_router(academic_router, prefix="/api")
     application.include_router(career_router, prefix="/api")
     application.include_router(social_router, prefix="/api")

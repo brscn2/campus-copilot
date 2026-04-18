@@ -319,11 +319,13 @@ async def download_all_courses(
             page = await context.new_page()
             try:
                 zip_path = await _download_course_zip(page, course, download_dir)
-                results.append({
-                    **course,
-                    "zip_path": str(zip_path) if zip_path else None,
-                    "status": "downloaded" if zip_path else "skipped",
-                })
+                results.append(
+                    {
+                        **course,
+                        "zip_path": str(zip_path) if zip_path else None,
+                        "status": "downloaded" if zip_path else "skipped",
+                    }
+                )
             except Exception as exc:
                 logger.exception("moodle_download_error", course=course["name"])
                 results.append({**course, "zip_path": None, "status": f"error: {exc}"})
@@ -368,11 +370,13 @@ async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
             name = (await link.inner_text()).strip()
             if not name or len(name) < 2:
                 continue
-            uploads.append({
-                "filename": name,
-                "url": href,
-                "moodle_course_id": moodle_course_id,
-            })
+            uploads.append(
+                {
+                    "filename": name,
+                    "url": href,
+                    "moodle_course_id": moodle_course_id,
+                }
+            )
 
         logger.info("moodle_uploads_fetched", course_id=moodle_course_id, count=len(uploads))
         await page.close()

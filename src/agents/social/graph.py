@@ -13,11 +13,12 @@ from src.agents.base import AgentInput, AgentOutput
 from src.agents.social.prompts import SOCIAL_SYSTEM
 from src.agents.social.state import SocialState
 from src.agents.social.tools import (
+    book_zhs,
+    get_event_details,
     get_mensa_menu,
-    register_zhs_course,
+    get_zhs_course_schedule,
     search_events,
     search_zhs_courses,
-    set_zhs_snipe_alert,
 )
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
@@ -26,9 +27,10 @@ logger = get_logger(__name__)
 
 TOOLS = [
     search_zhs_courses,
-    register_zhs_course,
-    set_zhs_snipe_alert,
+    get_zhs_course_schedule,
+    book_zhs,
     search_events,
+    get_event_details,
     get_mensa_menu,
 ]
 

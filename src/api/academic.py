@@ -1,4 +1,4 @@
-"""REST endpoints for the Academic tab — courses, deadlines, slides, thesis."""
+"""REST endpoints for the Academic tab — courses, uploads, thesis, rooms."""
 
 from __future__ import annotations
 
@@ -7,31 +7,22 @@ from typing import Any
 from fastapi import APIRouter
 
 from src.integrations.library import search_rooms
-from src.integrations.moodle import get_courses, get_deadlines, get_slides
+from src.integrations.moodle import get_courses, get_uploads
 from src.integrations.tumonline import search_thesis_opportunities
 
 router = APIRouter(prefix="/academic", tags=["academic"])
 
 
 @router.get("/courses")
-async def list_courses(student_id: str = "demo-student") -> list[dict[str, Any]]:
+async def list_courses(semester: str | None = None) -> list[dict[str, Any]]:
     """List enrolled Moodle courses."""
-    return await get_courses(student_id=student_id)
+    return await get_courses(semester=semester)
 
 
-@router.get("/courses/{course_id}/slides")
-async def list_slides(course_id: str) -> list[dict[str, Any]]:
-    """List lecture slides for a course."""
-    return await get_slides(course_id=course_id)
-
-
-@router.get("/deadlines")
-async def list_deadlines(
-    student_id: str = "demo-student",
-    course_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """List upcoming deadlines."""
-    return await get_deadlines(student_id=student_id, course_id=course_id)
+@router.get("/courses/{course_id}/uploads")
+async def list_uploads(course_id: str) -> list[dict[str, Any]]:
+    """List resources/uploads for a Moodle course."""
+    return await get_uploads(moodle_course_id=course_id)
 
 
 @router.get("/thesis")

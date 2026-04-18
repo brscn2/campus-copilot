@@ -5,68 +5,95 @@ Tools are the hands — they do I/O. No LLM calls inside.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import tool
 
+from src.integrations.esn_tumi import fetch_event_detail as _fetch_event_detail
 from src.integrations.esn_tumi import search_events as _search_events
 from src.integrations.mensa import get_menu as _get_menu
-from src.integrations.zhs import register_for_course as _register_zhs
 from src.integrations.zhs import search_courses as _search_zhs
-from src.integrations.zhs import set_snipe_alert as _set_snipe
+from src.integrations.zhs_booking import book_zhs_course as _book_course
+from src.integrations.zhs_booking import get_course_details as _get_details
+
+if TYPE_CHECKING:
+    from src.models.event import EsnEvent
+
+TUM_USERNAME = "go79sax"
+TUM_PASSWORD = "Polyu03@@@"
 
 
 @tool
 async def search_zhs_courses(
-    category: str | None = None,
-    day: str | None = None,
     keyword: str | None = None,
-    available_only: bool = False,
+    category: str | None = None,
+    level: str | None = None,
+    location: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search for ZHS university sport courses.
+    """Search ZHS university sport courses from kurse.zhs-muenchen.de.
+
+    Returns courses with names, descriptions, categories, levels, and direct links.
 
     Args:
-        category: Sport category filter (e.g. 'climbing', 'yoga', 'swimming', 'martial_arts').
-        day: Day of week filter (e.g. 'Monday', 'Wednesday').
-        keyword: Keyword to match course name (e.g. 'bouldering').
-        available_only: Only show courses with open spots.
+        keyword: Text search (e.g. 'yoga', 'basketball', 'climbing').
+        category: Filter by category (e.g. 'Yoga & Mindfulness', 'Football').
+        level: Filter by level ('Beginner', 'Intermediate', 'Advanced', 'All Levels').
+        location: Filter by campus ('Munich', 'Garching', 'Freising').
     """
-    return await _search_zhs(
-        category=category,
-        day=day,
-        keyword=keyword,
-        available_only=available_only,
+    result: list[dict[str, Any]] = await _search_zhs(
+        keyword=keyword, category=category, level=level, location=location
     )
+    return result
 
 
 @tool
-async def register_zhs_course(
-    course_id: str,
-    student_id: str,
+async def get_zhs_course_schedule(
+    course_name: str,
 ) -> dict[str, Any]:
-    """Register for a ZHS sport course.
+    """Get full timetable and booking details for a ZHS course.
+
+    Returns schedule with timeslots (for free play) or weekly class options
+    (for paid courses), including dates, times, prices, locations, and
+    availability status.
+
+    ALWAYS call this before booking to show the student what's available.
 
     Args:
-        course_id: The ZHS course identifier from search results.
-        student_id: The student registering.
+        course_name: Course to look up (e.g. 'basketball free play', 'yoga hatha').
     """
-    return await _register_zhs(course_id=course_id, student_id=student_id)
+    result: dict[str, Any] = await _get_details(
+        tum_username=TUM_USERNAME, tum_password=TUM_PASSWORD, course_name=course_name
+    )
+    return result
 
 
 @tool
-async def set_zhs_snipe_alert(
-    course_id: str,
-    student_id: str,
+async def book_zhs(
+    course_name: str,
+    course_index: int = 0,
+    slot_id: str = "",
 ) -> dict[str, Any]:
-    """Set a snipe alert for a full ZHS course.
+    """Book a ZHS course or free play slot. Completes the full checkout.
 
-    When a spot opens or registration begins, the student will be notified.
+    For weekly courses: use course_index to pick which class option.
+    For free play: use slot_id (from get_zhs_course_schedule) to pick the timeslot.
+
+    IMPORTANT: Always call get_zhs_course_schedule first to show available
+    options, then confirm with the student before calling this.
 
     Args:
-        course_id: The ZHS course to watch.
-        student_id: The student to notify.
+        course_name: Course to book (e.g. 'basketball free play').
+        course_index: For weekly courses, which option (0 = first, 1 = second, etc.).
+        slot_id: For free play, the slot ID from the schedule results.
     """
-    return await _set_snipe(course_id=course_id, student_id=student_id)
+    result: dict[str, Any] = await _book_course(
+        tum_username=TUM_USERNAME,
+        tum_password=TUM_PASSWORD,
+        course_name=course_name,
+        course_index=course_index,
+        slot_id=slot_id or None,
+    )
+    return result
 
 
 @tool
@@ -75,14 +102,30 @@ async def search_events(
     tags: list[str] | None = None,
     available_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """Search for upcoming social events (ESN TUMi, Luma, UnternehmerTUM).
+    """Search for upcoming ESN TUMi events for international students in Munich.
+
+    Returns real events from tumi.esn.world with registration links.
 
     Args:
-        keyword: Keyword to match event title/description.
-        tags: Tags to filter by (e.g. 'social', 'hiking', 'tech', 'networking').
+        keyword: Text search against event titles and descriptions.
+        tags: Topic filters (e.g. 'party', 'hiking', 'culture').
         available_only: Only show events with open spots.
     """
     return await _search_events(keyword=keyword, tags=tags, available_only=available_only)
+
+
+@tool
+async def get_event_details(event_id: str) -> dict[str, Any]:
+    """Get full details for a specific ESN TUMi event by its ID.
+
+    Args:
+        event_id: The event ID from search results.
+    """
+    event: EsnEvent | None = await _fetch_event_detail(event_id)
+    if event is None:
+        return {"error": "Event not found", "recoverable": False}
+    result: dict[str, Any] = dict(event.to_tool_dict())
+    return result
 
 
 @tool
@@ -91,10 +134,13 @@ async def get_mensa_menu(
     vegetarian_only: bool = False,
     vegan_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """Get today's Mensa menu.
+    """Get today's Mensa menu from the TUM eat-api.
+
+    Real data from TUM Studentenwerk canteens. Only available on weekdays.
 
     Args:
-        mensa: Which mensa ('mensa-garching' or 'mensa-arcisstrasse').
+        mensa: Canteen slug — popular: 'mensa-garching', 'mensa-arcisstr',
+               'mensa-leopoldstr', 'mensa-lothstr', 'fmi-bistro'.
         vegetarian_only: Only vegetarian options.
         vegan_only: Only vegan options.
     """
