@@ -140,8 +140,8 @@ class StudentConceptProgressRow(Base):
 
     __tablename__ = "student_concept_progress"
 
-    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"))
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
     core_concept: Mapped[str] = mapped_column(String(500))
     mastery_score: Mapped[float] = mapped_column(Float, default=0.0)
     exercises_completed: Mapped[int] = mapped_column(Integer, default=0)
@@ -167,8 +167,8 @@ class QuizAttemptRow(Base):
 
     __tablename__ = "quiz_attempts"
 
-    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"))
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
     core_concepts: Mapped[list[str]] = mapped_column(JSONB, default=list)
     question_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     answers: Mapped[dict[str, dict[str, str]]] = mapped_column(JSONB, default=dict)
@@ -182,8 +182,8 @@ class FlashcardAttemptRow(Base):
 
     __tablename__ = "flashcard_attempts"
 
-    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
-    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"))
+    student_id: Mapped[str] = mapped_column(String(255))
+    course_id: Mapped[str] = mapped_column(String(500))
     core_concepts: Mapped[list[str]] = mapped_column(JSONB, default=list)
     card_ratings: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
 

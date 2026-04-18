@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import random
-import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -47,15 +46,6 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
-
-
-def _is_valid_uuid(value: str) -> bool:
-    """Check if a string is a valid UUID (for DB FK lookups)."""
-    try:
-        uuid.UUID(value)
-        return True
-    except ValueError:
-        return False
 
 
 # ============================================================================
@@ -159,9 +149,6 @@ async def _get_seen_question_ids(
     Returns:
         Set of question IDs the student has already attempted.
     """
-    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
-        return set()
-
     result = await session.execute(
         select(QuizAttemptRow.question_ids).where(
             QuizAttemptRow.student_id == student_id,
@@ -192,9 +179,6 @@ async def _get_seen_card_ids(
     Returns:
         Set of card IDs the student has already reviewed.
     """
-    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
-        return set()
-
     result = await session.execute(
         select(FlashcardAttemptRow.card_ratings).where(
             FlashcardAttemptRow.student_id == student_id,
@@ -231,9 +215,6 @@ async def _pick_weakest_concepts(
     """
     if not available:
         return []
-
-    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
-        return available[:limit]
 
     result = await session.execute(
         select(StudentConceptProgressRow).where(
@@ -876,13 +857,6 @@ async def get_course_progress(
     Returns:
         Dict with course_id, overall_mastery, and list of concept progress.
     """
-    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
-        return {
-            "course_id": course_id,
-            "overall_mastery": 0.0,
-            "concepts": [],
-        }
-
     result = await session.execute(
         select(StudentConceptProgressRow).where(
             StudentConceptProgressRow.student_id == student_id,
@@ -934,8 +908,6 @@ async def set_manual_mastery(
     Returns:
         Updated mastery score.
     """
-    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
-        return mastery
     result = await session.execute(
         select(StudentConceptProgressRow).where(
             StudentConceptProgressRow.student_id == student_id,

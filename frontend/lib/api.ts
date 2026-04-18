@@ -164,3 +164,38 @@ export function requestFlashcards(
     }),
   })
 }
+
+export interface QuizScoreResult {
+  score: number
+  total: number
+  correct: number
+  per_concept: Record<string, number>
+  mastery_updates: Record<string, number>
+}
+
+export function submitQuiz(
+  studentId: string,
+  courseId: string,
+  answers: { question_id: string; selected: string }[],
+): Promise<QuizScoreResult> {
+  return request("/api/learning/quiz/submit", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, answers }),
+  })
+}
+
+export interface FlashcardScoreResult {
+  per_concept: Record<string, number>
+  mastery_updates: Record<string, number>
+}
+
+export function submitFlashcards(
+  studentId: string,
+  courseId: string,
+  ratings: { card_id: string; rating: string }[],
+): Promise<FlashcardScoreResult> {
+  return request("/api/learning/flashcards/submit", {
+    method: "POST",
+    body: JSON.stringify({ student_id: studentId, course_id: courseId, ratings }),
+  })
+}

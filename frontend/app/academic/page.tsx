@@ -40,6 +40,8 @@ import {
   getCourseProgress,
   requestQuiz,
   requestFlashcards,
+  submitQuiz,
+  submitFlashcards,
   type CourseFile,
   type SyncedCourse,
   type QuizQuestion,
@@ -416,6 +418,8 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
         onClose={() => setQuizOpen(false)}
         questions={quizQuestions}
         courseCode={course?.course_code ?? course?.display_name ?? ""}
+        courseId={course?.dataset_name ?? ""}
+        onMasteryUpdate={(m) => setMastery(Math.round(m * 100))}
       />
 
       <FlashcardDialog
@@ -423,6 +427,8 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
         onClose={() => setFlashcardOpen(false)}
         cards={flashcards}
         courseCode={course?.course_code ?? course?.display_name ?? ""}
+        courseId={course?.dataset_name ?? ""}
+        onMasteryUpdate={(m) => setMastery(Math.round(m * 100))}
       />
     </>
   )
@@ -792,11 +798,15 @@ function LiveQuizDialog({
   onClose,
   questions,
   courseCode,
+  courseId,
+  onMasteryUpdate,
 }: {
   open: boolean
   onClose: () => void
   questions: QuizQuestion[]
   courseCode: string
+  courseId: string
+  onMasteryUpdate: (mastery: number) => void
 }) {
   const [answers, setAnswers] = React.useState<Record<number, number>>({})
   const [submitted, setSubmitted] = React.useState(false)
@@ -807,8 +817,22 @@ function LiveQuizDialog({
     }
   }, [open])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setSubmitted(true)
+    const payload = questions
+      .map((q, i) => ({
+        question_id: q.id,
+        selected: String.fromCharCode(65 + (answers[i] ?? 0)),
+      }))
+      .filter((_, i) => answers[i] !== undefined)
+    try {
+      const result = await submitQuiz("demo", courseId, payload)
+      toast.success(`Score: ${result.correct}/${result.total}`)
+      const vals = Object.values(result.mastery_updates)
+      if (vals.length > 0) onMasteryUpdate(vals.reduce((a, b) => a + b, 0) / vals.length)
+    } catch {
+      toast.error("Failed to submit quiz to server")
+    }
   }
 
   const getCorrectIndex = (q: QuizQuestion): number => {
@@ -930,26 +954,45 @@ function FlashcardDialog({
   onClose,
   cards,
   courseCode,
+  courseId,
+  onMasteryUpdate,
 }: {
   open: boolean
   onClose: () => void
   cards: FlashcardItem[]
   courseCode: string
+  courseId: string
+  onMasteryUpdate: (mastery: number) => void
 }) {
   const [currentIndex, setCurrentIndex] = React.useState(0)
   const [flipped, setFlipped] = React.useState(false)
   const [ratings, setRatings] = React.useState<Record<string, string>>({})
+  const [submitted, setSubmitted] = React.useState(false)
 
   React.useEffect(() => {
     if (open) {
       setCurrentIndex(0)
       setFlipped(false)
       setRatings({})
+      setSubmitted(false)
     }
   }, [open])
 
   const card = cards[currentIndex]
   const done = currentIndex >= cards.length
+
+  React.useEffect(() => {
+    if (done && !submitted && Object.keys(ratings).length > 0) {
+      setSubmitted(true)
+      const payload = Object.entries(ratings).map(([card_id, rating]) => ({ card_id, rating }))
+      submitFlashcards("demo", courseId, payload)
+        .then((result) => {
+          const vals = Object.values(result.mastery_updates)
+          if (vals.length > 0) onMasteryUpdate(vals.reduce((a, b) => a + b, 0) / vals.length)
+        })
+        .catch(() => {})
+    }
+  }, [done])
 
   const handleRate = (rating: string) => {
     if (!card) return
