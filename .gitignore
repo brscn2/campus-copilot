@@ -11,6 +11,9 @@ build/
 .venv/
 venv/
 .uv/
+downloads/
+extracted/
+.sessions/
 
 # Environment
 .env

@@ -154,7 +154,7 @@ async def upload_file_to_cognee(
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
             f"{settings.cognee_api_url}/api/v1/add",
-            files={"file": (filename, file_content)},
+            files=[("data", (filename, file_content, "application/pdf"))],
             data={"datasetName": dataset},
             headers={"X-Api-Key": settings.cognee_api_key},
         )
