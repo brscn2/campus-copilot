@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from src.agents.base import AgentInput, AgentOutput
+from src.lib.activity import log_activity
 from src.lib.logging import get_logger
 from src.lib.memory import query_memory
 from src.lib.memory_extractor import BATCH_SIZE, extract_and_remember
@@ -84,6 +85,17 @@ async def run_orchestrator(
         context=memory_context,
     )
     result: AgentOutput = await runner(agent_input)
+
+    summary = result.message[:120] if result.message else "Processed request"
+    try:
+        await log_activity(
+            student_id=student_id,
+            agent=agent_name,
+            text=summary,
+            metadata={"session_id": session_id, "query": query[:200]},
+        )
+    except Exception:
+        logger.warning("activity_log_failed", exc_info=True)
 
     await session_store.append(
         session_id,

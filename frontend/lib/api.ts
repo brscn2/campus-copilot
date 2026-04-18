@@ -241,3 +241,17 @@ export function deleteCalendarEvent(eventId: string): Promise<void> {
 export function getCalendarStatus(): Promise<{ connected: boolean }> {
   return request("/api/calendar/status")
 }
+
+// --- Agent Activity ---
+
+export interface ActivityItem {
+  id: string
+  agent: "academic" | "career" | "social"
+  icon: string
+  text: string
+  created_at: string
+}
+
+export function listActivity(limit: number = 20): Promise<{ activities: ActivityItem[] }> {
+  return request(`/api/activity?limit=${limit}`)
+}

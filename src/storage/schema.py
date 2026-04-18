@@ -188,3 +188,19 @@ class FlashcardAttemptRow(Base):
     card_ratings: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
 
     __table_args__ = (Index("ix_flashcard_attempts_student_course", "student_id", "course_id"),)
+
+
+class AgentActivityRow(Base):
+    """Tracks autonomous actions performed by agents."""
+
+    __tablename__ = "agent_activities"
+
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"), index=True)
+    agent: Mapped[str] = mapped_column(String(50))
+    icon: Mapped[str] = mapped_column(String(10))
+    text: Mapped[str] = mapped_column(Text)
+    metadata_: Mapped[dict[str, str]] = mapped_column("metadata", JSONB, default=dict)
+
+    student: Mapped[StudentRow] = relationship()
+
+    __table_args__ = (Index("ix_agent_activities_student_created", "student_id", "created_at"),)

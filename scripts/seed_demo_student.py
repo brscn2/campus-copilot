@@ -8,8 +8,9 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from src.config import get_settings
+from src.config import DEMO_STUDENT_ID, get_settings
 from src.storage.schema import (
+    AgentActivityRow,
     Base,
     CourseRow,
     DeadlineRow,
@@ -27,7 +28,7 @@ async def seed() -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async with session_factory() as session:
-        student_id = str(uuid4())
+        student_id = DEMO_STUDENT_ID
         student = StudentRow(
             id=student_id,
             tum_email="alex.mueller@tum.de",
@@ -125,9 +126,58 @@ async def seed() -> None:
         ]
         session.add_all(lectures)
 
+        activities = [
+            AgentActivityRow(
+                student_id=student_id,
+                agent="academic",
+                icon="\U0001f4da",
+                text="Summarized new slides from IN2346 (Neural Network Basics)",
+                metadata_={},
+            ),
+            AgentActivityRow(
+                student_id=student_id,
+                agent="social",
+                icon="\U0001f3cb\ufe0f",
+                text="ZHS Climbing slot secured for Tue 18:00",
+                metadata_={},
+            ),
+            AgentActivityRow(
+                student_id=student_id,
+                agent="career",
+                icon="\U0001f4e7",
+                text="Draft email to Prof. Günnemann ready for review",
+                metadata_={},
+            ),
+            AgentActivityRow(
+                student_id=student_id,
+                agent="academic",
+                icon="\U0001f4dd",
+                text="Generated 14 flashcards for IN2064 — Linear Regression",
+                metadata_={},
+            ),
+            AgentActivityRow(
+                student_id=student_id,
+                agent="social",
+                icon="\U0001f37d\ufe0f",
+                text="Found 3 overlapping lunch slots with Jonas & Lena",
+                metadata_={},
+            ),
+            AgentActivityRow(
+                student_id=student_id,
+                agent="career",
+                icon="\U0001f4bc",
+                text="Matched 2 new working-student roles at BMW & Siemens",
+                metadata_={},
+            ),
+        ]
+        session.add_all(activities)
+
         await session.commit()
         print(f"Seeded demo student: {student.display_name} ({student.tum_email})")
-        print(f"  {len(courses)} courses, {len(deadlines)} deadlines, {len(lectures)} lectures")
+        print(
+            f"  {len(courses)} courses, {len(deadlines)} deadlines,"
+            f" {len(lectures)} lectures, {len(activities)} activities"
+        )
 
     await engine.dispose()
 

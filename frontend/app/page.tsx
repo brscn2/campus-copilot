@@ -1,5 +1,6 @@
 "use client"
 
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,11 +10,13 @@ import { MasteryChart } from "@/components/mastery-chart"
 import { PageHeader } from "@/components/page-header"
 import { useChat } from "@/components/chat-context"
 import {
-  agentActivity,
+  agentActivity as mockAgentActivity,
   deadlines,
   todayEvents,
   user,
 } from "@/lib/mock-data"
+import type { AgentType } from "@/lib/mock-data"
+import { listActivity } from "@/lib/api"
 import {
   ArrowRight,
   BookOpen,
@@ -41,8 +44,56 @@ function daysUntil(dateStr: string) {
   return `in ${diff}d`
 }
 
+interface ActivityEntry {
+  id: string | number
+  icon: string
+  text: string
+  time: string
+  agent: AgentType
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return "yesterday"
+  return `${days}d ago`
+}
+
 export default function DashboardPage() {
   const { openWithPrompt } = useChat()
+  const [activities, setActivities] = useState<ActivityEntry[]>(
+    mockAgentActivity.map((a) => ({ ...a, agent: a.agent as AgentType })),
+  )
+
+  const fetchActivities = useCallback(async () => {
+    try {
+      const { activities: items } = await listActivity(6)
+      if (items.length > 0) {
+        setActivities(
+          items.map((item) => ({
+            id: item.id,
+            icon: item.icon,
+            text: item.text,
+            time: formatRelativeTime(item.created_at),
+            agent: item.agent as AgentType,
+          })),
+        )
+      }
+    } catch {
+      // keep mock data on failure
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchActivities()
+    const interval = setInterval(fetchActivities, 30_000)
+    return () => clearInterval(interval)
+  }, [fetchActivities])
 
   const sortedDeadlines = [...deadlines].sort((a, b) => b.priority - a.priority).slice(0, 5)
 
@@ -123,7 +174,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-3">
-              {agentActivity.slice(0, 6).map((a) => (
+              {activities.slice(0, 6).map((a) => (
                 <li key={a.id} className="flex items-start gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-base">
                     {a.icon}

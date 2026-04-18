@@ -113,6 +113,7 @@ def _register_exception_handlers(application: FastAPI) -> None:
 def _register_routes(application: FastAPI) -> None:
     """Register all API routers."""
     from src.api.academic import router as academic_router
+    from src.api.activity import router as activity_router
     from src.api.auth import router as auth_router
     from src.api.calendar import router as calendar_router
     from src.api.career import router as career_router
@@ -128,6 +129,7 @@ def _register_routes(application: FastAPI) -> None:
     application.include_router(academic_router, prefix="/api")
     application.include_router(career_router, prefix="/api")
     application.include_router(social_router, prefix="/api")
+    application.include_router(activity_router, prefix="/api")
     application.include_router(cognify_router)
     application.include_router(pipeline_router)
     application.include_router(quiz_router, prefix="/api")
