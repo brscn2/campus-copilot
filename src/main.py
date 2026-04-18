@@ -30,9 +30,13 @@ def create_app() -> FastAPI:
     )
 
     settings = get_settings()
+    origins = [settings.frontend_url]
+    if settings.environment == "development":
+        origins.append("http://localhost:3000")
+        origins.append("http://127.0.0.1:3000")
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_url],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -79,11 +83,17 @@ def _register_exception_handlers(application: FastAPI) -> None:
 
 def _register_routes(application: FastAPI) -> None:
     """Register all API routers."""
+    from src.api.academic import router as academic_router
+    from src.api.career import router as career_router
     from src.api.chat import router as chat_router
     from src.api.health import router as health_router
+    from src.api.social import router as social_router
 
     application.include_router(health_router)
     application.include_router(chat_router, prefix="/api")
+    application.include_router(academic_router, prefix="/api")
+    application.include_router(career_router, prefix="/api")
+    application.include_router(social_router, prefix="/api")
 
 
 app = create_app()

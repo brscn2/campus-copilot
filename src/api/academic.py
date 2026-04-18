@@ -1,0 +1,59 @@
+"""REST endpoints for the Academic tab — courses, deadlines, slides, thesis."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter
+
+from src.integrations.library import search_rooms
+from src.integrations.moodle import get_courses, get_deadlines, get_slides
+from src.integrations.tumonline import search_thesis_opportunities
+
+router = APIRouter(prefix="/academic", tags=["academic"])
+
+
+@router.get("/courses")
+async def list_courses(student_id: str = "demo-student") -> list[dict[str, Any]]:
+    """List enrolled Moodle courses."""
+    return await get_courses(student_id=student_id)
+
+
+@router.get("/courses/{course_id}/slides")
+async def list_slides(course_id: str) -> list[dict[str, Any]]:
+    """List lecture slides for a course."""
+    return await get_slides(course_id=course_id)
+
+
+@router.get("/deadlines")
+async def list_deadlines(
+    student_id: str = "demo-student",
+    course_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """List upcoming deadlines."""
+    return await get_deadlines(student_id=student_id, course_id=course_id)
+
+
+@router.get("/thesis")
+async def list_thesis(
+    keywords: str | None = None,
+    chair: str | None = None,
+    tags: str | None = None,
+) -> list[dict[str, Any]]:
+    """Search thesis opportunities."""
+    kw_list = keywords.split(",") if keywords else None
+    tag_list = tags.split(",") if tags else None
+    return await search_thesis_opportunities(keywords=kw_list, chair=chair, tags=tag_list)
+
+
+@router.get("/rooms")
+async def list_rooms(
+    date: str = "2026-04-18",
+    duration_hours: int = 2,
+    capacity: int = 1,
+    building: str | None = None,
+) -> list[dict[str, Any]]:
+    """Search available library study rooms."""
+    return await search_rooms(
+        date=date, duration_hours=duration_hours, capacity=capacity, building=building
+    )
