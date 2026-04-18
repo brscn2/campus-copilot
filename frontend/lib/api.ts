@@ -200,6 +200,98 @@ export function submitFlashcards(
   })
 }
 
+// --- Career Profile ---
+
+export interface ProfileSkill {
+  name: string
+  level: number
+  source: string
+}
+
+export interface ProfileGrade {
+  course_code: string
+  title: string
+  grade: string
+  credits: number
+  semester: string
+  examiner: string
+}
+
+export interface ProfileLecture {
+  title: string
+  code: string
+  type: string
+  chair: string
+}
+
+export interface StudentProfile {
+  name: string
+  username: string
+  headline: string
+  summary: string
+  program: string
+  degree: string
+  gpa: number | null
+  skills: ProfileSkill[]
+  grades: ProfileGrade[]
+  current_lectures: ProfileLecture[]
+}
+
+export function getStudentProfile(): Promise<StudentProfile> {
+  return request("/api/career/profile")
+}
+
+// --- Career Events ---
+
+export interface CareerEvent {
+  title: string
+  url: string
+  date: string
+  time: string
+  organizer: string
+  location: string
+  status: string
+  image: string
+  fit_score: number
+  reason: string
+}
+
+export function listCareerEvents(): Promise<CareerEvent[]> {
+  return request("/api/career/events")
+}
+
+// --- CV Audit ---
+
+export interface CvFlag {
+  level: "critical" | "warning" | "good"
+  text: string
+}
+
+export interface CvSuggestion {
+  label: string
+  original: string
+  suggested: string
+}
+
+export interface CvAuditResult {
+  filename: string
+  flags: CvFlag[]
+  suggestions: CvSuggestion[]
+}
+
+export async function uploadCvForAudit(file: File): Promise<CvAuditResult> {
+  const form = new FormData()
+  form.append("file", file)
+  const res = await fetch(`${API_BASE}/api/career/cv/audit`, {
+    method: "POST",
+    body: form,
+  })
+  if (!res.ok) {
+    throw new Error(`CV audit failed: ${res.status} ${await res.text()}`)
+  }
+  return res.json() as Promise<CvAuditResult>
+}
+
 // --- Calendar ---
 
 export interface CalendarEventData {

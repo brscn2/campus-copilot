@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     cognee_embedding_model: str = "bedrock/amazon.titan-embed-text-v2:0"
     cognee_embedding_dimensions: int = 1024
 
+    # Firecrawl (for Luma event scraping)
+    firecrawl_api_key: str = ""
+
+    # TUMonline
+    tumonline_token: str = ""
+    tumonline_base_url: str = "https://campus.tum.de/tumonline"
+
     # Google Calendar
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""

@@ -17,13 +17,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AgentBadge } from "@/components/agent-badge"
-import { careerEvents, cvFlags, jobs, profile, user } from "@/lib/mock-data"
+import { jobs, profile as mockProfile, user } from "@/lib/mock-data"
+import {
+  getStudentProfile,
+  listCareerEvents,
+  uploadCvForAudit,
+  type CareerEvent,
+  type CvAuditResult,
+  type CvFlag,
+  type CvSuggestion,
+  type StudentProfile,
+} from "@/lib/api"
 import {
   Building2,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronUp,
   Download,
   FileText,
+  Loader2,
   MapPin,
   Pencil,
   Sparkles,
@@ -67,14 +80,56 @@ export default function CareerPage() {
   )
 }
 
+const SKILLS_COLLAPSED = 6
+const NOISE_TITLES = ["fachschaftsvollversammlung", "vollversammlung", "studentische vertretung"]
+
+function isRealLecture(lec: { title: string; code: string; type: string }): boolean {
+  const lower = lec.title.toLowerCase()
+  return !NOISE_TITLES.some((n) => lower.includes(n)) && lec.code !== "" && lec.code !== "IN"
+}
+
 function ProfileTab() {
+  const [profile, setProfile] = React.useState<StudentProfile | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [showAllSkills, setShowAllSkills] = React.useState(false)
+
+  React.useEffect(() => {
+    getStudentProfile()
+      .then(setProfile)
+      .catch(() => setProfile(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const displayProfile = profile ?? {
+    name: user.name,
+    headline: mockProfile.headline,
+    summary: mockProfile.summary,
+    skills: mockProfile.skills,
+    gpa: null,
+    grades: [],
+    current_lectures: [],
+  }
+
+  const filteredLectures = (profile?.current_lectures ?? []).filter(isRealLecture)
+  const visibleSkills = showAllSkills
+    ? displayProfile.skills
+    : displayProfile.skills.slice(0, SKILLS_COLLAPSED)
+  const hasMoreSkills = displayProfile.skills.length > SKILLS_COLLAPSED
+
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-2">
         <CardHeader className="flex flex-row items-start justify-between">
           <div>
-            <CardTitle className="text-base">{user.name}</CardTitle>
-            <CardDescription>{profile.headline}</CardDescription>
+            <div className="flex items-center gap-2.5">
+              <CardTitle className="text-base">{displayProfile.name}</CardTitle>
+              {profile?.gpa != null && (
+                <Badge variant="secondary" className="font-mono text-xs">
+                  GPA {profile.gpa}
+                </Badge>
+              )}
+            </div>
+            <CardDescription>{profile?.headline ?? mockProfile.headline}</CardDescription>
           </div>
           <Button variant="outline" size="sm" className="gap-1.5">
             <Pencil className="h-3.5 w-3.5" />
@@ -82,12 +137,30 @@ function ProfileTab() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="text-sm text-muted-foreground">{profile.summary}</div>
+          <div className="text-sm text-muted-foreground">
+            {profile?.summary ?? mockProfile.summary}
+          </div>
+
+          {filteredLectures.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 text-sm font-medium">Current Semester</div>
+              <div className="flex flex-wrap gap-1.5">
+                {filteredLectures.map((lec, i) => (
+                  <Badge key={`${lec.code}-${i}`} variant="secondary" className="font-normal">
+                    {lec.code} — {lec.title}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mt-5">
-            <div className="mb-2 text-sm font-medium">Skills (inferred from coursework)</div>
+            <div className="mb-2 text-sm font-medium">
+              Skills (inferred from coursework)
+              {loading && <span className="ml-2 text-xs text-muted-foreground">Loading...</span>}
+            </div>
             <div className="grid gap-2.5 sm:grid-cols-2">
-              {profile.skills.map((s) => (
+              {visibleSkills.map((s) => (
                 <div key={s.name} className="rounded-lg border border-border p-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{s.name}</span>
@@ -98,7 +171,63 @@ function ProfileTab() {
                 </div>
               ))}
             </div>
+            {hasMoreSkills && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 w-full gap-1.5 text-xs text-muted-foreground"
+                onClick={() => setShowAllSkills((p) => !p)}
+              >
+                {showAllSkills ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Show fewer skills
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    Show {displayProfile.skills.length - SKILLS_COLLAPSED} more skills
+                  </>
+                )}
+              </Button>
+            )}
           </div>
+
+          {profile && profile.grades.length > 0 && (
+            <div className="mt-5">
+              <div className="mb-2 text-sm font-medium">Exam Results</div>
+              <div className="rounded-lg border border-border">
+                <div className="flex flex-col">
+                  {profile.grades.map((g, i) => (
+                    <div
+                      key={`${g.course_code}-${g.semester}-${i}`}
+                      className="flex items-center justify-between border-b border-border p-2.5 last:border-b-0"
+                    >
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-mono text-xs text-primary">{g.course_code}</span>
+                        <span className="truncate">{g.title}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{g.credits} ECTS</span>
+                        <span
+                          className={cn(
+                            "font-mono font-medium",
+                            parseFloat(g.grade.replace(",", ".")) <= 2.0
+                              ? "text-career"
+                              : parseFloat(g.grade.replace(",", ".")) >= 5.0
+                                ? "text-destructive"
+                                : "text-foreground"
+                          )}
+                        >
+                          {g.grade}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -109,7 +238,7 @@ function ProfileTab() {
         </CardHeader>
         <CardContent>
           <ul className="flex flex-col gap-3">
-            {profile.projects.map((p) => (
+            {mockProfile.projects.map((p) => (
               <li key={p.name} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-sm font-medium">{p.name}</span>
@@ -129,8 +258,36 @@ function ProfileTab() {
 }
 
 function CvAuditTab() {
-  const [uploaded, setUploaded] = React.useState(false)
+  const [auditResult, setAuditResult] = React.useState<CvAuditResult | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
   const [accepted, setAccepted] = React.useState<Record<number, boolean>>({})
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setError("Please upload a PDF file.")
+      return
+    }
+    setLoading(true)
+    setError(null)
+    setAuditResult(null)
+    setAccepted({})
+    try {
+      const result = await uploadCvForAudit(file)
+      setAuditResult(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file) handleFile(file)
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-5">
@@ -138,12 +295,25 @@ function CvAuditTab() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Upload CV</CardTitle>
-            <CardDescription>PDF, DOCX, or plaintext. Audited in seconds.</CardDescription>
+            <CardDescription>PDF only. Audited against your real TUMonline transcript.</CardDescription>
           </CardHeader>
           <CardContent>
-            {!uploaded ? (
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleFile(file)
+              }}
+            />
+
+            {!auditResult && !loading ? (
               <button
-                onClick={() => setUploaded(true)}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
                 className="flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center transition-colors hover:bg-muted/60"
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -152,24 +322,47 @@ function CvAuditTab() {
                 <div className="mt-3 text-sm font-medium">Drop your CV here</div>
                 <div className="mt-1 text-xs text-muted-foreground">or click to browse</div>
               </button>
-            ) : (
+            ) : loading ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-muted/30 px-6 py-10 text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <div className="mt-3 text-sm font-medium">Analyzing your CV...</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Cross-referencing with TUMonline transcript
+                </div>
+              </div>
+            ) : auditResult ? (
               <div className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-3">
                   <FileText className="h-5 w-5 text-primary" />
                   <div className="flex-1">
-                    <div className="text-sm font-medium">Alex_Mueller_CV_2026.pdf</div>
-                    <div className="text-xs text-muted-foreground">Audited · 6 findings</div>
+                    <div className="text-sm font-medium">{auditResult.filename}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Audited · {auditResult.flags.length} findings · {auditResult.suggestions.length} suggestions
+                    </div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => setUploaded(false)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setAuditResult(null)
+                      setAccepted({})
+                    }}
+                  >
                     Re-upload
                   </Button>
                 </div>
               </div>
+            ) : null}
+
+            {error && (
+              <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                {error}
+              </div>
             )}
 
-            {uploaded ? (
+            {auditResult && auditResult.flags.length > 0 && (
               <div className="mt-4 space-y-2">
-                {cvFlags.map((f, i) => (
+                {auditResult.flags.map((f, i) => (
                   <div
                     key={i}
                     className={cn(
@@ -191,7 +384,7 @@ function CvAuditTab() {
                   </div>
                 ))}
               </div>
-            ) : null}
+            )}
           </CardContent>
         </Card>
       </div>
@@ -199,59 +392,68 @@ function CvAuditTab() {
       <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle className="text-base">Original vs Suggested</CardTitle>
-          <CardDescription>Accept or reject each change individually.</CardDescription>
+          <CardDescription>
+            {auditResult
+              ? "Accept or reject each change individually."
+              : "Upload a CV to see AI-powered suggestions."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
-            <CvPanel label="Original">
-              <div className="text-xs text-muted-foreground">Email</div>
-              <div className="font-medium text-sm line-through">gamer_king99@gmail.com</div>
-              <div className="mt-3 text-xs text-muted-foreground">Skills</div>
-              <div className="text-sm">Python, Java, HTML</div>
-              <div className="mt-3 text-xs text-muted-foreground">Relevant coursework</div>
-              <div className="text-sm">IN0007, MA0901</div>
-            </CvPanel>
-            <CvPanel label="Suggested">
-              <div className="text-xs text-muted-foreground">Email</div>
-              <div className="font-medium text-sm">alex.mueller@tum.de</div>
-              <div className="mt-3 text-xs text-muted-foreground">Skills</div>
-              <div className="text-sm">Python, TypeScript, PyTorch, Java</div>
-              <div className="mt-3 text-xs text-muted-foreground">Relevant coursework</div>
-              <div className="text-sm">IN0007, IN2064 (ML · 1.3), MA0901, IN2086</div>
-            </CvPanel>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {[
-              "Replace email with TUM address",
-              "Add IN2064 Machine Learning to coursework",
-              "Modernize tech stack (TypeScript, PyTorch)",
-            ].map((label, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg border border-border p-3">
-                <div className="text-sm">{label}</div>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant={accepted[i] === false ? "default" : "outline"}
-                    className={cn("gap-1", accepted[i] === false && "bg-destructive hover:bg-destructive/90")}
-                    onClick={() => setAccepted((p) => ({ ...p, [i]: false }))}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={accepted[i] === true ? "default" : "outline"}
-                    className="gap-1"
-                    onClick={() => setAccepted((p) => ({ ...p, [i]: true }))}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Accept
-                  </Button>
-                </div>
+          {auditResult && auditResult.suggestions.length > 0 ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <CvPanel label="Original">
+                  {auditResult.suggestions.map((s, i) => (
+                    <div key={i} className={i > 0 ? "mt-3" : ""}>
+                      <div className="text-xs text-muted-foreground">{s.label}</div>
+                      <div className="text-sm line-through text-muted-foreground">{s.original}</div>
+                    </div>
+                  ))}
+                </CvPanel>
+                <CvPanel label="Suggested">
+                  {auditResult.suggestions.map((s, i) => (
+                    <div key={i} className={i > 0 ? "mt-3" : ""}>
+                      <div className="text-xs text-muted-foreground">{s.label}</div>
+                      <div className="text-sm font-medium">{s.suggested}</div>
+                    </div>
+                  ))}
+                </CvPanel>
               </div>
-            ))}
-          </div>
+
+              <div className="mt-4 space-y-2">
+                {auditResult.suggestions.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="text-sm">{s.label}</div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant={accepted[i] === false ? "default" : "outline"}
+                        className={cn("gap-1", accepted[i] === false && "bg-destructive hover:bg-destructive/90")}
+                        onClick={() => setAccepted((p) => ({ ...p, [i]: false }))}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={accepted[i] === true ? "default" : "outline"}
+                        className="gap-1"
+                        onClick={() => setAccepted((p) => ({ ...p, [i]: true }))}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Accept
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : !auditResult ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+              <FileText className="h-10 w-10 opacity-30" />
+              <div className="mt-3 text-sm">Upload your CV to get started</div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>
@@ -414,38 +616,115 @@ function JobScoutTab() {
 }
 
 function EventsTab() {
+  const [events, setEvents] = React.useState<CareerEvent[]>([])
+  const [loading, setLoading] = React.useState(true)
+
+  React.useEffect(() => {
+    listCareerEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <div className="mt-3 text-sm">Finding Munich events and scoring relevance...</div>
+      </div>
+    )
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <Calendar className="h-10 w-10 opacity-30" />
+        <div className="mt-3 text-sm">No upcoming events found</div>
+      </div>
+    )
+  }
+
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {careerEvents.map((e) => (
-        <Card key={e.id}>
-          <CardContent className="pt-6">
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {events.map((e, i) => (
+        <Card key={`${e.url}-${i}`} className="overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-sm">
+          {e.image && (
+            <div className="relative w-full overflow-hidden bg-muted">
+              <img
+                src={e.image.replace(/width=\d+,height=\d+/, "width=400,height=400")}
+                alt={e.title}
+                className="w-full"
+              />
+              <div
+                className={cn(
+                  "absolute right-2 top-2 flex h-10 w-10 flex-col items-center justify-center rounded-lg text-center shadow-sm",
+                  e.fit_score >= 70 && "bg-career-soft text-career",
+                  e.fit_score >= 40 && e.fit_score < 70 && "bg-social-soft text-social",
+                  e.fit_score < 40 && "bg-destructive/10 text-destructive",
+                )}
+              >
+                <div className="text-xs font-semibold leading-none">{e.fit_score}</div>
+                <div className="mt-0.5 text-[9px] uppercase tracking-wide">fit</div>
+              </div>
+            </div>
+          )}
+          <CardContent className={e.image ? "pt-3" : "pt-6"}>
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="secondary" className="font-normal">{e.source}</Badge>
-                  <span>{e.topic}</span>
+                  <Badge variant="secondary" className="font-normal">Luma</Badge>
+                  {e.status && (
+                    <Badge
+                      variant={e.status === "Sold Out" ? "destructive" : "outline"}
+                      className="font-normal text-[10px]"
+                    >
+                      {e.status}
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-1.5 text-base font-medium leading-snug">{e.title}</div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
-                    {e.date}
+                    {e.date}{e.time ? ` · ${e.time}` : ""}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3" />
-                    {e.location}
-                  </span>
+                  {e.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      {e.location}
+                    </span>
+                  )}
                 </div>
+                {e.organizer && (
+                  <div className="mt-1 text-xs text-muted-foreground">By {e.organizer}</div>
+                )}
+                {e.reason && (
+                  <div className="mt-2 text-xs text-muted-foreground italic">{e.reason}</div>
+                )}
               </div>
-              <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-career-soft text-center text-career">
-                <div className="text-xs font-semibold leading-none">{e.fitScore}</div>
-                <div className="mt-0.5 text-[9px] uppercase tracking-wide">fit</div>
-              </div>
+              {!e.image && (
+                <div
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg text-center",
+                    e.fit_score >= 70 && "bg-career-soft text-career",
+                    e.fit_score >= 40 && e.fit_score < 70 && "bg-social-soft text-social",
+                    e.fit_score < 40 && "bg-destructive/10 text-destructive",
+                  )}
+                >
+                  <div className="text-xs font-semibold leading-none">{e.fit_score}</div>
+                  <div className="mt-0.5 text-[9px] uppercase tracking-wide">fit</div>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" size="sm">Dismiss</Button>
-              <Button size="sm" onClick={() => toast.success(`RSVP drafted for ${e.title}`)}>
-                Register / Draft RSVP
+              <Button variant="outline" size="sm" onClick={() => toast.success("Dismissed")}>
+                Dismiss
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => window.open(e.url, "_blank")}
+              >
+                View on Luma
               </Button>
             </div>
           </CardContent>

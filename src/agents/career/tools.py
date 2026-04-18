@@ -10,6 +10,12 @@ from typing import Any
 from langchain_core.tools import tool
 
 from src.integrations.jobs import search_jobs as _search_jobs
+from src.integrations.tumonline import (
+    get_grades as _get_grades,
+    get_identity as _get_identity,
+    get_lectures as _get_lectures,
+)
+from src.lib.skill_inference import infer_skills, is_noise_lecture
 
 MOCK_CV_SECTIONS = [
     "education",
@@ -19,6 +25,67 @@ MOCK_CV_SECTIONS = [
     "languages",
     "certifications",
 ]
+
+
+@tool
+async def get_student_profile() -> dict[str, Any]:
+    """Fetch the student's full academic profile from TUMonline.
+
+    Returns identity, program, grades, current lectures, and inferred skills.
+    Use this when the student asks about their profile, skills, courses, or grades.
+    """
+    identity = await _get_identity()
+    grades = await _get_grades()
+    lectures = await _get_lectures()
+    skills = await infer_skills(grades, lectures)
+
+    program = ""
+    degree = ""
+    if grades:
+        program = grades[0].get("program", "")
+        degree = grades[0].get("degree", "")
+
+    passed = [g for g in grades if g.get("grade_float") is not None and g["grade_float"] <= 4.0]
+    gpa = None
+    if passed:
+        total_credits = sum(g["credits"] for g in passed)
+        if total_credits > 0:
+            weighted = sum(g["grade_float"] * g["credits"] for g in passed)
+            gpa = round(weighted / total_credits, 2)
+
+    all_sem_ids = [lec.get("semester_id", "") for lec in lectures if lec.get("semester_id")]
+    current_sem = max(all_sem_ids) if all_sem_ids else ""
+
+    current_lectures = [
+        {"title": lec["title"], "code": lec["code"], "type": lec["type"], "chair": lec["chair"]}
+        for lec in lectures
+        if lec.get("type_short") in ("VO", "SE")
+        and not is_noise_lecture(lec.get("title", ""))
+        and lec.get("semester_id", "") == current_sem
+    ]
+
+    return {
+        "identity": {
+            "first_name": identity.get("first_name", ""),
+            "last_name": identity.get("last_name", ""),
+            "username": identity.get("username", ""),
+        },
+        "program": program,
+        "degree": degree,
+        "gpa": gpa,
+        "grades": [
+            {
+                "course_code": g["course_code"],
+                "title": g["title"],
+                "grade": g["grade"],
+                "credits": g["credits"],
+                "semester": g["semester"],
+            }
+            for g in grades
+        ],
+        "current_lectures": current_lectures,
+        "skills": skills,
+    }
 
 
 @tool
