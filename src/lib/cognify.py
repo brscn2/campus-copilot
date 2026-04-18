@@ -5,12 +5,12 @@ from __future__ import annotations
 import asyncio
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import structlog
 
 from src.config import get_settings
-from src.exceptions import CogneeIngestionError
 
 logger = structlog.get_logger(__name__)
 
@@ -61,7 +61,7 @@ async def trigger_cognify(course_id: str) -> str:
     Returns:
         Job ID for status polling.
     """
-    job_id = f"cognify_{course_id}_{asyncio.get_event_loop().time():.0f}"
+    job_id = f"cognify_{course_id}_{uuid4().hex[:8]}"
     _jobs[job_id] = {
         "course_id": course_id,
         "status": CognifyStatus.PENDING,
@@ -95,15 +95,23 @@ async def _run_cognify(job_id: str, course_id: str) -> None:
         _jobs[job_id]["status"] = CognifyStatus.COMPLETED
         logger.info("cognify_completed", job_id=job_id, course_id=course_id)
 
-        # Auto-generate quizzes after cognify completes
+        # Auto-generate all learning content (quizzes, flashcards, summaries)
+        # after cognify completes. All content is regenerated on every run.
+        # Future: use a concept manifest to diff and only regenerate changed concepts.
         try:
-            from src.lib.quiz import generate_quizzes_for_course
+            from src.lib.content_generator import generate_all_for_course
 
-            await generate_quizzes_for_course(course_id)
-            logger.info("quiz_generation_after_cognify_done", course_id=course_id)
+            gen_result = await generate_all_for_course(course_id)
+            logger.info(
+                "content_generation_after_cognify_done",
+                course_id=course_id,
+                quizzes=gen_result.quizzes_generated,
+                flashcards=gen_result.flashcards_generated,
+                summaries=gen_result.summaries_generated,
+            )
         except Exception:
             logger.warning(
-                "quiz_generation_after_cognify_failed",
+                "content_generation_after_cognify_failed",
                 course_id=course_id,
                 exc_info=True,
             )
@@ -112,7 +120,6 @@ async def _run_cognify(job_id: str, course_id: str) -> None:
         _jobs[job_id]["status"] = CognifyStatus.FAILED
         _jobs[job_id]["error"] = f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
         logger.error("cognify_failed", job_id=job_id, course_id=course_id, exc_info=True)
-        raise CogneeIngestionError(f"Cognify failed for {course_id}") from exc
     except Exception as exc:
         _jobs[job_id]["status"] = CognifyStatus.FAILED
         _jobs[job_id]["error"] = str(exc)[:200]
