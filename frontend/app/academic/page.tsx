@@ -37,6 +37,7 @@ import {
   listCourseFiles,
   getFileUrl,
   listSyncedCourses,
+  getCourseProgress,
   requestQuiz,
   requestFlashcards,
   type CourseFile,
@@ -106,10 +107,18 @@ function CoursesTab() {
   const [selectedSynced, setSelectedSynced] = React.useState<SyncedCourse | null>(null)
   const [syncing, setSyncing] = React.useState(false)
   const [syncedCourses, setSyncedCourses] = React.useState<SyncedCourse[]>([])
+  const [masteryMap, setMasteryMap] = React.useState<Record<string, number>>({})
 
   React.useEffect(() => {
     listSyncedCourses()
-      .then((res) => setSyncedCourses(res.courses))
+      .then((res) => {
+        setSyncedCourses(res.courses)
+        for (const sc of res.courses) {
+          getCourseProgress("demo", sc.dataset_name)
+            .then((p) => setMasteryMap((prev) => ({ ...prev, [sc.dataset_name]: Math.round(p.overall_mastery * 100) })))
+            .catch(() => {})
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -147,9 +156,7 @@ function CoursesTab() {
           <div className="mb-2 text-sm font-medium">Synced courses (from Moodle)</div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {syncedCourses.map((sc) => {
-              let hash = 0
-              for (let i = 0; i < sc.dataset_name.length; i++) hash = ((hash << 5) - hash + sc.dataset_name.charCodeAt(i)) | 0
-              const mastery = 30 + (Math.abs(hash) % 55)
+              const mastery = masteryMap[sc.dataset_name] ?? 0
               return (
                 <button
                   key={sc.dataset_name}
@@ -246,6 +253,7 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   const [quizQuestions, setQuizQuestions] = React.useState<QuizQuestion[]>([])
   const [flashcards, setFlashcards] = React.useState<FlashcardItem[]>([])
   const [loadingContent, setLoadingContent] = React.useState(false)
+  const [mastery, setMastery] = React.useState(0)
 
   React.useEffect(() => {
     if (course) {
@@ -254,17 +262,15 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
         .then((res) => setFiles(res.files))
         .catch(() => setFiles([]))
         .finally(() => setFilesLoading(false))
+
+      getCourseProgress("demo", course.dataset_name)
+        .then((p) => setMastery(Math.round(p.overall_mastery * 100)))
+        .catch(() => setMastery(0))
     } else {
       setFiles([])
+      setMastery(0)
     }
   }, [course])
-
-  let mastery = 0
-  if (course) {
-    let hash = 0
-    for (let i = 0; i < course.dataset_name.length; i++) hash = ((hash << 5) - hash + course.dataset_name.charCodeAt(i)) | 0
-    mastery = 30 + (Math.abs(hash) % 55)
-  }
 
   const handleLaunch = async (type: "quiz" | "flashcard", count: number, concept: string) => {
     if (!course) return
@@ -304,16 +310,19 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
-                <div>
-                  <div className="text-xs text-muted-foreground">Mastery</div>
-                  <div className="text-lg font-semibold tabular-nums">{mastery}%</div>
+              <div className="rounded-lg border border-border bg-muted/40 p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Overall mastery</div>
+                    <div className="text-lg font-semibold tabular-nums">{mastery}%</div>
+                  </div>
+                  <Progress value={mastery} className="h-2 w-32" />
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="mt-3 flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5"
+                    className="flex-1 gap-1.5"
                     onClick={() => setConfigOpen("flashcard")}
                     disabled={loadingContent}
                   >
@@ -326,7 +335,7 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
                   </Button>
                   <Button
                     size="sm"
-                    className="gap-1.5"
+                    className="flex-1 gap-1.5"
                     onClick={() => setConfigOpen("quiz")}
                     disabled={loadingContent}
                   >

@@ -876,6 +876,13 @@ async def get_course_progress(
     Returns:
         Dict with course_id, overall_mastery, and list of concept progress.
     """
+    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
+        return {
+            "course_id": course_id,
+            "overall_mastery": 0.0,
+            "concepts": [],
+        }
+
     result = await session.execute(
         select(StudentConceptProgressRow).where(
             StudentConceptProgressRow.student_id == student_id,
@@ -927,7 +934,8 @@ async def set_manual_mastery(
     Returns:
         Updated mastery score.
     """
-    # Find or create progress row
+    if not _is_valid_uuid(student_id) or not _is_valid_uuid(course_id):
+        return mastery
     result = await session.execute(
         select(StudentConceptProgressRow).where(
             StudentConceptProgressRow.student_id == student_id,

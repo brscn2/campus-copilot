@@ -133,6 +133,21 @@ export interface FlashcardSession {
   total_available: number
 }
 
+export interface CourseProgress {
+  course_id: string
+  overall_mastery: number
+  concepts: {
+    core_concept: string
+    mastery_score: number
+    quizzes_taken: number
+    quizzes_passed: number
+  }[]
+}
+
+export function getCourseProgress(studentId: string, courseId: string): Promise<CourseProgress> {
+  return request(`/api/learning/progress/${encodeURIComponent(studentId)}/${encodeURIComponent(courseId)}`)
+}
+
 export function requestFlashcards(
   studentId: string,
   courseId: string,
