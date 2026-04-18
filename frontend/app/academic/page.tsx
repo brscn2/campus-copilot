@@ -9,13 +9,6 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
-import { Switch } from "@/components/ui/switch"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -31,30 +24,52 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { courses, deadlines, theses, studyRooms } from "@/lib/mock-data"
-import { runFullPipeline, listCourseFiles, getFileUrl, listSyncedCourses, type CourseFile, type SyncedCourse } from "@/lib/api"
+import { deadlines, theses, studyRooms } from "@/lib/mock-data"
+import { runFullPipeline, listSyncedCourses, type SyncedCourse } from "@/lib/api"
 import { AgentBadge } from "@/components/agent-badge"
 import {
   ArrowRight,
   ArrowUpDown,
   BookOpen,
   Calendar as CalendarIcon,
-  ChevronRight,
-  Download,
-  FileText,
-  Layers,
   Loader2,
   Mail,
   MapPin,
   RefreshCw,
   Search,
-  Sparkles,
   Users as UsersIcon,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
-type Course = (typeof courses)[number]
+const _SEMESTER_RE = /(SoSe|WiSe)\s+(\d{4})/
+const _UNKNOWN_SEMESTER = "Other"
+
+function semesterSortKey(label: string): number {
+  const m = _SEMESTER_RE.exec(label)
+  if (!m) return -Infinity
+  const year = Number.parseInt(m[2], 10)
+  return year * 2 + (m[1] === "WiSe" ? 1 : 0)
+}
+
+function groupCoursesBySemester(
+  courses: SyncedCourse[],
+): { semester: string; key: number; items: SyncedCourse[] }[] {
+  const buckets = new Map<string, SyncedCourse[]>()
+  for (const c of courses) {
+    const label = c.semester || _UNKNOWN_SEMESTER
+    const bucket = buckets.get(label)
+    if (bucket) bucket.push(c)
+    else buckets.set(label, [c])
+  }
+  return [...buckets.entries()]
+    .map(([semester, items]) => ({
+      semester,
+      key: semesterSortKey(semester),
+      items: [...items].sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    }))
+    .sort((a, b) => b.key - a.key)
+}
 
 export default function AcademicPage() {
   return (
@@ -91,14 +106,15 @@ export default function AcademicPage() {
 }
 
 function CoursesTab() {
-  const [selected, setSelected] = React.useState<Course | null>(null)
   const [syncing, setSyncing] = React.useState(false)
+  const [loading, setLoading] = React.useState(true)
   const [syncedCourses, setSyncedCourses] = React.useState<SyncedCourse[]>([])
 
   React.useEffect(() => {
     listSyncedCourses()
       .then((res) => setSyncedCourses(res.courses))
       .catch(() => {})
+      .finally(() => setLoading(false))
   }, [])
 
   const handleSync = async () => {
@@ -116,347 +132,102 @@ function CoursesTab() {
     }
   }
 
+  const groups = React.useMemo(() => groupCoursesBySemester(syncedCourses), [syncedCourses])
+
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        {syncedCourses.length > 0 && (
-          <div className="text-sm text-muted-foreground">
-            {syncedCourses.length} courses synced from Moodle
-          </div>
-        )}
-        <Button onClick={handleSync} disabled={syncing} className="ml-auto gap-2">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="text-sm text-muted-foreground">
+          {syncedCourses.length > 0
+            ? `${syncedCourses.length} course${syncedCourses.length === 1 ? "" : "s"} synced from Moodle`
+            : loading
+              ? "Loading your Moodle courses…"
+              : "No Moodle courses synced yet."}
+        </div>
+        <Button onClick={handleSync} disabled={syncing} className="gap-2">
           {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           {syncing ? "Syncing from Moodle…" : "Sync from Moodle"}
         </Button>
       </div>
 
-      {syncedCourses.length > 0 && (
-        <div className="mb-6">
-          <div className="mb-2 text-sm font-medium">Synced courses (from Moodle)</div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {syncedCourses.map((sc) => (
-              <Card key={sc.dataset_name} className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      {sc.course_code && (
-                        <div className="font-mono text-xs font-medium text-primary">{sc.course_code}</div>
-                      )}
-                      <CardTitle className="mt-0.5 text-base leading-snug">{sc.display_name}</CardTitle>
-                    </div>
-                    {sc.pdf_count > 0 ? (
-                      <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
-                        {sc.pdf_count} PDFs
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="shrink-0">No files</Badge>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {sc.semester && (
-                    <div className="text-xs text-muted-foreground">{sc.semester}</div>
-                  )}
-                  {(() => {
-                    let hash = 0
-                    for (let i = 0; i < sc.dataset_name.length; i++) hash = ((hash << 5) - hash + sc.dataset_name.charCodeAt(i)) | 0
-                    const mastery = 30 + (Math.abs(hash) % 55)
-                    return (
-                      <>
-                        <div className="mt-3 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Mastery</span>
-                          <span className="font-medium tabular-nums">{mastery}%</span>
-                        </div>
-                        <Progress value={mastery} className="mt-1.5 h-1.5" />
-                      </>
-                    )
-                  })()}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
+      {!loading && syncedCourses.length === 0 && (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+            <div className="text-sm font-medium">No courses yet</div>
+            <div className="max-w-sm text-xs text-muted-foreground">
+              Click <span className="font-medium">Sync from Moodle</span> to pull your enrolled
+              courses, slides, and uploads into Campus Co-Pilot.
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="mb-2 text-sm font-medium">Your courses</div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {courses.map((c) => (
-          <button
-            key={c.code}
-            onClick={() => setSelected(c)}
-            className="group text-left"
-          >
-            <Card className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs font-medium text-primary">{c.code}</div>
-                    <CardTitle className="mt-0.5 text-base leading-snug">{c.name}</CardTitle>
-                  </div>
-                  {c.newSlides ? (
-                    <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
-                      New slides
-                    </Badge>
-                  ) : null}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xs text-muted-foreground">{c.chair}</div>
-                <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Mastery</span>
-                  <span className="font-medium tabular-nums">{c.mastery}%</span>
-                </div>
-                <Progress value={c.mastery} className="mt-1.5 h-1.5" />
-                <div className="mt-3 flex items-center justify-end text-xs text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                  Open <ChevronRight className="ml-0.5 h-3 w-3" />
-                </div>
-              </CardContent>
-            </Card>
-          </button>
+      <div className="flex flex-col gap-6">
+        {groups.map((group) => (
+          <section key={group.semester}>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h2 className="text-sm font-medium">{group.semester}</h2>
+              <span className="text-xs text-muted-foreground">
+                {group.items.length} course{group.items.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {group.items.map((sc) => (
+                <Card
+                  key={sc.dataset_name}
+                  className="h-full transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        {sc.course_code && (
+                          <div className="font-mono text-xs font-medium text-primary">
+                            {sc.course_code}
+                          </div>
+                        )}
+                        <CardTitle className="mt-0.5 text-base leading-snug">
+                          {sc.display_name}
+                        </CardTitle>
+                      </div>
+                      {sc.pdf_count > 0 ? (
+                        <Badge className="shrink-0 bg-academic-soft text-academic hover:bg-academic-soft">
+                          {sc.pdf_count} PDFs
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="shrink-0">
+                          No files
+                        </Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {sc.semester && (
+                      <div className="text-xs text-muted-foreground">{sc.semester}</div>
+                    )}
+                    {(() => {
+                      let hash = 0
+                      for (let i = 0; i < sc.dataset_name.length; i++) {
+                        hash = ((hash << 5) - hash + sc.dataset_name.charCodeAt(i)) | 0
+                      }
+                      const mastery = 30 + (Math.abs(hash) % 55)
+                      return (
+                        <>
+                          <div className="mt-3 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Mastery</span>
+                            <span className="font-medium tabular-nums">{mastery}%</span>
+                          </div>
+                          <Progress value={mastery} className="mt-1.5 h-1.5" />
+                        </>
+                      )
+                    })()}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
         ))}
       </div>
-
-      <CourseDetailDialog course={selected} onClose={() => setSelected(null)} />
     </>
-  )
-}
-
-function CourseDetailDialog({ course, onClose }: { course: Course | null; onClose: () => void }) {
-  const [quizOpen, setQuizOpen] = React.useState(false)
-  const [reviewed, setReviewed] = React.useState<Record<number, boolean>>({})
-  const [files, setFiles] = React.useState<CourseFile[]>([])
-  const [filesLoading, setFilesLoading] = React.useState(false)
-
-  React.useEffect(() => {
-    if (course) {
-      const init: Record<number, boolean> = {}
-      course.lectures.forEach((l) => (init[l.id] = l.reviewed))
-      setReviewed(init)
-
-      setFilesLoading(true)
-      const datasetName = course.code.toLowerCase().replace(/[^a-z0-9]/g, "")
-      listCourseFiles(datasetName)
-        .then((res) => setFiles(res.files))
-        .catch(() => setFiles([]))
-        .finally(() => setFilesLoading(false))
-    } else {
-      setFiles([])
-    }
-  }, [course])
-
-  return (
-    <>
-      <Dialog open={!!course} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-w-2xl">
-          {course ? (
-            <>
-              <DialogHeader>
-                <div className="font-mono text-xs text-primary">{course.code}</div>
-                <DialogTitle className="text-xl">{course.name}</DialogTitle>
-                <DialogDescription>
-                  {course.professor} · {course.chair} · {course.credits} ECTS
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/40 p-3">
-                <div>
-                  <div className="text-xs text-muted-foreground">Mastery</div>
-                  <div className="text-lg font-semibold tabular-nums">{course.mastery}%</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-1.5">
-                    <Layers className="h-3.5 w-3.5" />
-                    Flashcards (28)
-                  </Button>
-                  <Button size="sm" className="gap-1.5" onClick={() => setQuizOpen(true)}>
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Generate quiz
-                  </Button>
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 text-sm font-medium">Slide summaries</div>
-                <Accordion type="single" collapsible className="w-full">
-                  {course.lectures.map((l) => (
-                    <AccordionItem key={l.id} value={`l-${l.id}`}>
-                      <div className="flex items-center gap-3">
-                        <AccordionTrigger className="flex-1 gap-3">
-                          <span className="text-left text-sm font-medium">{l.title}</span>
-                        </AccordionTrigger>
-                        <div
-                          className="flex items-center gap-2 pr-3 text-xs text-muted-foreground"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <span>Reviewed</span>
-                          <Switch
-                            checked={!!reviewed[l.id]}
-                            onCheckedChange={(v) =>
-                              setReviewed((prev) => ({ ...prev, [l.id]: v }))
-                            }
-                            aria-label={`Mark ${l.title} reviewed`}
-                          />
-                        </div>
-                      </div>
-                      <AccordionContent className="text-sm text-muted-foreground">
-                        {l.summary}
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
-              </div>
-
-              {files.length > 0 && (
-                <div>
-                  <div className="mb-2 text-sm font-medium">Uploaded files (S3)</div>
-                  <div className="flex flex-col gap-1.5">
-                    {files.map((f) => {
-                      const filename = f.key.split("/").pop() ?? f.key
-                      return (
-                        <div
-                          key={f.key}
-                          className="flex items-center justify-between rounded-lg border border-border p-2.5"
-                        >
-                          <div className="flex items-center gap-2 text-sm">
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                            <span>{filename}</span>
-                            <span className="text-xs text-muted-foreground">
-                              ({(f.size / 1024).toFixed(0)} KB)
-                            </span>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="gap-1.5"
-                            onClick={async () => {
-                              const datasetName = course.code.toLowerCase().replace(/[^a-z0-9]/g, "")
-                              const res = await getFileUrl(datasetName, filename)
-                              window.open(res.url, "_blank")
-                            }}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            Download
-                          </Button>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-              {filesLoading && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading files…
-                </div>
-              )}
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <QuizDialog open={quizOpen} onClose={() => setQuizOpen(false)} course={course} />
-    </>
-  )
-}
-
-const sampleQuiz = [
-  {
-    q: "What is the average time complexity of hash table lookup with chaining under a good hash function?",
-    options: ["O(log n)", "O(1)", "O(n)", "O(n log n)"],
-    correct: 1,
-  },
-  {
-    q: "Which sorting algorithm has worst-case O(n log n) and is in-place?",
-    options: ["Merge sort", "Quicksort", "Heapsort", "Insertion sort"],
-    correct: 2,
-  },
-  {
-    q: "In BFS on an unweighted graph, the first time a node is dequeued…",
-    options: [
-      "…we know the shortest path length",
-      "…it may still change later",
-      "…depends on the start node only",
-      "…only if the graph is a tree",
-    ],
-    correct: 0,
-  },
-]
-
-function QuizDialog({ open, onClose, course }: { open: boolean; onClose: () => void; course: Course | null }) {
-  const [answers, setAnswers] = React.useState<Record<number, number>>({})
-  const [submitted, setSubmitted] = React.useState(false)
-
-  React.useEffect(() => {
-    if (open) {
-      setAnswers({})
-      setSubmitted(false)
-    }
-  }, [open])
-
-  const score = Object.entries(answers).filter(([i, v]) => sampleQuiz[Number(i)].correct === v).length
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            Quiz · {course?.code}
-          </DialogTitle>
-          <DialogDescription>Auto-generated from your unreviewed lectures.</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-5">
-          {sampleQuiz.map((item, i) => (
-            <div key={i}>
-              <div className="mb-2 text-sm font-medium">
-                {i + 1}. {item.q}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {item.options.map((opt, oi) => {
-                  const picked = answers[i] === oi
-                  const correct = submitted && item.correct === oi
-                  const wrong = submitted && picked && item.correct !== oi
-                  return (
-                    <label
-                      key={oi}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-lg border border-border p-2.5 text-sm transition-colors",
-                        picked && !submitted && "border-primary bg-primary/5",
-                        correct && "border-career bg-career-soft",
-                        wrong && "border-destructive bg-destructive/10",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name={`q-${i}`}
-                        className="accent-primary"
-                        checked={picked}
-                        onChange={() => setAnswers((a) => ({ ...a, [i]: oi }))}
-                        disabled={submitted}
-                      />
-                      {opt}
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-        <DialogFooter className="sm:justify-between">
-          <div className="text-sm text-muted-foreground">
-            {submitted ? `Score: ${score} / ${sampleQuiz.length}` : `${Object.keys(answers).length} / ${sampleQuiz.length} answered`}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
-            <Button onClick={() => setSubmitted(true)} disabled={submitted}>
-              Submit
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
