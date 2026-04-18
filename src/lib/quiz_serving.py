@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import random
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy import select
@@ -33,6 +33,7 @@ from src.models.learning import (
     FlashcardSession,
     FlashcardSubmission,
     QuizFile,
+    QuizQuestion,
     QuizQuestionServed,
     QuizResult,
     QuizSession,
@@ -303,7 +304,7 @@ async def serve_quiz(
         raise QuizNotFoundError(f"No quiz content available for course {course_id}")
 
     # Load quiz files from S3
-    all_questions: list[tuple[str, QuizFile, object]] = []
+    all_questions: list[tuple[str, QuizFile, QuizQuestion]] = []
     for safe_concept in core_concepts_safe:
         quiz_file = await _load_quiz_file(course_id, safe_concept)
         if quiz_file:
@@ -508,7 +509,7 @@ async def score_quiz(
 
     # Load quiz files to look up correct answers
     # Group answers by core concept first
-    question_map: dict[str, dict[str, str]] = {}  # qid -> {correct, concept, ...}
+    question_map: dict[str, dict[str, Any]] = {}  # qid -> {correct, concept, leaf_concepts}
     concept_questions: dict[str, list[str]] = {}  # concept -> [qids]
     concept_leaf_concepts: dict[str, list[str]] = {}  # concept -> [leaf concepts]
     concept_total_leaf: dict[str, int] = {}  # concept -> total leaf count
@@ -685,10 +686,10 @@ async def score_flashcards(
             logger.warning("card_not_found", card_id=card_id)
             continue
 
-        concept = card_map[card_id]["core_concept"]
-        if concept not in concept_ratings:
-            concept_ratings[concept] = {}
-        concept_ratings[concept][card_id] = rating
+        rated_concept = str(card_map[card_id]["core_concept"])
+        if rated_concept not in concept_ratings:
+            concept_ratings[rated_concept] = {}
+        concept_ratings[rated_concept][card_id] = rating
 
     # Write FlashcardAttemptRow
     attempt = FlashcardAttemptRow(
@@ -878,7 +879,8 @@ async def get_course_progress(
     ]
 
     # Compute overall mastery as average of all concepts
-    overall_mastery = sum(c["mastery_score"] for c in concepts) / len(concepts) if concepts else 0.0
+    mastery_scores = [row.mastery_score for row in rows]
+    overall_mastery = sum(mastery_scores) / len(mastery_scores) if mastery_scores else 0.0
 
     return {
         "course_id": course_id,
