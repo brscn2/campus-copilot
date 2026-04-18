@@ -92,19 +92,29 @@ def get_titan_embed_model_id() -> str:
 
 
 def get_chat_model(
-    *, model: str = "sonnet", temperature: float = 0.3, max_tokens: int = 1024
+    *,
+    model: str = "sonnet",
+    temperature: float = 0.3,
+    max_tokens: int = 1024,
+    system: str | None = None,
 ) -> Any:
     """Return a LangChain ChatBedrock instance for use with LangGraph.
 
     Args:
-        model: Model name (currently only 'sonnet' is available).
+        model: One of 'sonnet', 'haiku'.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens to generate.
+        system: Optional system prompt passed via model_kwargs to avoid
+            SystemMessage ordering issues with tool_use/tool_result pairs.
     """
     from langchain_aws import ChatBedrock
 
     settings = get_settings()
-    model_id = get_sonnet_model_id()
+    model_id = get_sonnet_model_id() if model == "sonnet" else get_haiku_model_id()
+
+    kwargs: dict[str, Any] = {"temperature": temperature, "max_tokens": max_tokens}
+    if system:
+        kwargs["system"] = system
 
     return ChatBedrock(
         model_id=model_id,
@@ -112,5 +122,5 @@ def get_chat_model(
         credentials_profile_name=None,
         aws_access_key_id=settings.aws_access_key_id,
         aws_secret_access_key=settings.aws_secret_access_key,
-        model_kwargs={"temperature": temperature, "max_tokens": max_tokens},
+        model_kwargs=kwargs,
     )

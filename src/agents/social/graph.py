@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -35,18 +35,15 @@ TOOLS = [
 
 def _build_graph() -> StateGraph[SocialState]:
     """Construct the Social agent graph."""
-    llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024)
-    llm_with_tools = llm.bind_tools(TOOLS)
 
     async def agent_node(state: SocialState) -> dict[str, Any]:
-        system = SystemMessage(
-            content=SOCIAL_SYSTEM.format(
-                today=date.today().isoformat(),
-                student_id=state["student_id"],
-            )
+        system_prompt = SOCIAL_SYSTEM.format(
+            today=date.today().isoformat(),
+            student_id=state["student_id"],
         )
-        messages = [system, *state["messages"]]
-        response = await llm_with_tools.ainvoke(messages)
+        llm = get_chat_model(model="sonnet", temperature=0.3, max_tokens=1024, system=system_prompt)
+        llm_with_tools = llm.bind_tools(TOOLS)
+        response = await llm_with_tools.ainvoke(state["messages"])
         return {"messages": [response]}
 
     def should_continue(state: SocialState) -> str:

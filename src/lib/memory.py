@@ -1,4 +1,4 @@
-"""Cognee Cloud memory layer — knowledge graph for cross-session retrieval."""
+"""Cognee memory layer — knowledge graph for cross-session retrieval."""
 
 from __future__ import annotations
 
@@ -19,14 +19,32 @@ async def _ensure_init() -> None:
     global _initialized
     if _initialized:
         return
+
     settings = get_settings()
-    if settings.cognee_api_key:
-        cognee.config.set_llm_config(
-            {
-                "llm_api_key": settings.cognee_api_key,
-                "llm_provider": settings.cognee_llm_provider,
-            }
-        )
+
+    cognee.config.set_llm_config(
+        {
+            "llm_api_key": settings.cognee_api_key or settings.aws_access_key_id,
+            "llm_provider": settings.cognee_llm_provider,
+            "llm_model": settings.cognee_llm_model,
+        }
+    )
+
+    cognee.config.set_embedding_config(
+        {
+            "embedding_provider": settings.cognee_embedding_provider,
+            "embedding_model": settings.cognee_embedding_model,
+            "embedding_dimensions": settings.cognee_embedding_dimensions,
+            "embedding_api_key": settings.cognee_api_key or settings.aws_access_key_id,
+        }
+    )
+
+    logger.info(
+        "cognee_initialized",
+        llm_provider=settings.cognee_llm_provider,
+        llm_model=settings.cognee_llm_model,
+        embedding_provider=settings.cognee_embedding_provider,
+    )
     _initialized = True
 
 
@@ -85,3 +103,19 @@ async def query_memory(
     except Exception:
         logger.warning("memory_query_failed", user_id=user_id, exc_info=True)
         return []
+
+
+async def forget_memory(*, user_id: str, dataset_name: str | None = None) -> None:
+    """Delete data from Cognee knowledge graph.
+
+    Args:
+        user_id: Student identifier for namespace isolation.
+        dataset_name: Specific dataset to delete. Defaults to the user's dataset.
+    """
+    try:
+        await _ensure_init()
+        target = dataset_name or f"student_{user_id}"
+        logger.info("memory_forget", user_id=user_id, dataset=target)
+        await cognee.forget(dataset=target)
+    except Exception:
+        logger.warning("memory_forget_failed", user_id=user_id, exc_info=True)
