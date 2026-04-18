@@ -86,7 +86,7 @@ async def _run_cognify(job_id: str, course_id: str) -> None:
                 f"{settings.cognee_api_url}/api/v1/cognify",
                 json={
                     "datasets": [dataset],
-                    "graph_model_name": "default",
+                    "customPrompt": COGNIFY_CUSTOM_PROMPT,
                 },
                 headers={"X-Api-Key": settings.cognee_api_key},
             )
