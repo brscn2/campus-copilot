@@ -460,6 +460,26 @@ export function getStudentProfile(): Promise<StudentProfile> {
   return request("/api/career/profile")
 }
 
+// --- Job Matching ---
+
+export interface MatchedJob {
+  id: string
+  title: string
+  company: string
+  kind: string
+  location: string
+  salary: string
+  description: string
+  source_url: string
+  posted_at: string
+  match_score: number
+  reasoning: string
+}
+
+export function listMatchedJobs(kind: string = "working_student"): Promise<MatchedJob[]> {
+  return request(`/api/career/jobs/matched?kind=${encodeURIComponent(kind)}`)
+}
+
 // --- Career Events ---
 
 export interface CareerEvent {

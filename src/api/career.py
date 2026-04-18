@@ -11,6 +11,7 @@ from src.integrations.jobs import search_jobs
 from src.integrations.luma import fetch_munich_events
 from src.integrations.tumonline import get_grades, get_identity, get_lectures
 from src.lib.bedrock import get_haiku_model_id, get_sonnet_model_id, invoke_model
+from src.lib.job_matching import match_jobs_via_cognee
 from src.lib.logging import get_logger
 from src.lib.skill_inference import infer_skills, is_noise_lecture
 
@@ -127,6 +128,43 @@ async def list_jobs(
     """Search job listings."""
     kw_list = keywords.split(",") if keywords else None
     return await search_jobs(kind=kind, keywords=kw_list, company=company, location=location)
+
+
+@router.get("/jobs/matched")
+async def list_matched_jobs(
+    kind: str = "working_student",
+) -> list[dict[str, Any]]:
+    """Fetch jobs from SerpAPI, ingest into Cognee, and match against student profile."""
+    try:
+        jobs = await search_jobs(kind=kind)
+    except Exception:
+        logger.warning("matched_jobs_search_failed", exc_info=True)
+        jobs = []
+
+    if not jobs:
+        return []
+
+    try:
+        identity = await get_identity()
+        grades = await get_grades()
+        lectures = await get_lectures()
+        skills = await infer_skills(grades, lectures)
+    except Exception:
+        logger.warning("matched_jobs_profile_failed", exc_info=True)
+        identity = {"first_name": "Student", "last_name": ""}
+        grades = []
+        lectures = []
+        skills = []
+
+    matched = await match_jobs_via_cognee(
+        jobs=jobs,
+        grades=grades,
+        lectures=lectures,
+        skills=skills,
+        identity=identity,
+        kind=kind,
+    )
+    return matched
 
 
 def _extract_pdf_text(data: bytes) -> str:

@@ -23,7 +23,7 @@ SERPAPI_TIMEOUT = 15.0
 KIND_QUERY_MAP: dict[str, str] = {
     "working_student": "(Werkstudent OR working student)",
     "internship": "(Praktikum OR internship)",
-    "new_grad": "(junior OR entry level OR new grad)",
+    "new_grad": "junior developer",
 }
 
 MOCK_JOBS: list[dict[str, Any]] = [
@@ -110,6 +110,7 @@ def _build_query(
     kind: str | None = None,
     keywords: list[str] | None = None,
     company: str | None = None,
+    location: str | None = None,
 ) -> str:
     """Build the SerpAPI ``q`` parameter from search filters."""
     parts: list[str] = []
@@ -125,6 +126,9 @@ def _build_query(
 
     if not parts:
         parts.append("student jobs")
+
+    city = (location or "Munich").split(",")[0].strip()
+    parts.append(city)
 
     return " ".join(parts)
 
@@ -177,8 +181,8 @@ async def _search_serpapi(
 ) -> list[dict[str, Any]]:
     """Query SerpAPI Google Jobs and return mapped results."""
     settings = get_settings()
-    query = _build_query(kind=kind, keywords=keywords, company=company)
     loc = location or "Munich, Bavaria, Germany"
+    query = _build_query(kind=kind, keywords=keywords, company=company, location=loc)
 
     params: dict[str, str] = {
         "engine": "google_jobs",
@@ -276,7 +280,16 @@ async def search_jobs(
             results: list[dict[str, Any]] = await _search_serpapi(
                 kind=kind, keywords=keywords, company=company, location=location
             )
-            return results
+            if kind:
+                filtered = [r for r in results if r.get("kind") == kind]
+                if filtered:
+                    results = filtered
+            if results:
+                return results
+            logger.warning("serpapi_empty_results_fallback_to_mock", kind=kind)
+            return await _search_mock(
+                kind=kind, keywords=keywords, company=company, location=location
+            )
         except JobSearchError:
             logger.warning("serpapi_failed_fallback_to_mock", exc_info=True)
             return await _search_mock(

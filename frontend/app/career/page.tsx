@@ -21,11 +21,13 @@ import { jobs, profile as mockProfile, user } from "@/lib/mock-data"
 import {
   getStudentProfile,
   listCareerEvents,
+  listMatchedJobs,
   uploadCvForAudit,
   type CareerEvent,
   type CvAuditResult,
   type CvFlag,
   type CvSuggestion,
+  type MatchedJob,
   type StudentProfile,
 } from "@/lib/api"
 import {
@@ -469,146 +471,192 @@ function CvPanel({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*/g, "")
+    .replace(/\\n/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+}
+
+const ALL_KINDS = ["working_student", "internship", "new_grad"] as const
+const KIND_LABELS: Record<string, string> = {
+  working_student: "Working Student",
+  internship: "Internship",
+  new_grad: "New Grad",
+}
+
 function JobScoutTab() {
-  const [type, setType] = React.useState<"working-student" | "internship" | "new-grad">("working-student")
-  const [detail, setDetail] = React.useState<(typeof jobs)[number] | null>(null)
-  const [optimizeOpen, setOptimizeOpen] = React.useState(false)
-  const filtered = jobs.filter((j) => j.type === type)
+  const [allJobs, setAllJobs] = React.useState<MatchedJob[]>([])
+  const [activeKinds, setActiveKinds] = React.useState<Set<string>>(new Set(ALL_KINDS))
+  const [loading, setLoading] = React.useState(true)
+  const [detail, setDetail] = React.useState<MatchedJob | null>(null)
+
+  React.useEffect(() => {
+    setLoading(true)
+    Promise.all(ALL_KINDS.map((k) => listMatchedJobs(k).catch(() => [] as MatchedJob[])))
+      .then(([ws, intern, ng]) => {
+        const tagged = [
+          ...ws.map((j) => ({ ...j, kind: j.kind || "working_student" })),
+          ...intern.map((j) => ({ ...j, kind: j.kind || "internship" })),
+          ...ng.map((j) => ({ ...j, kind: j.kind || "new_grad" })),
+        ]
+        tagged.sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
+        setAllJobs(tagged)
+      })
+      .finally(() => setLoading(false))
+  }, [])
+
+  const toggleKind = (kind: string) => {
+    setActiveKinds((prev) => {
+      const next = new Set(prev)
+      if (next.has(kind)) {
+        if (next.size > 1) next.delete(kind)
+      } else {
+        next.add(kind)
+      }
+      return next
+    })
+  }
+
+  const filtered = allJobs.filter((j) => activeKinds.has(j.kind || ""))
 
   return (
     <>
-      <Tabs value={type} onValueChange={(v) => setType(v as typeof type)} className="mb-4">
-        <TabsList>
-          <TabsTrigger value="working-student">Working Student</TabsTrigger>
-          <TabsTrigger value="internship">Internship</TabsTrigger>
-          <TabsTrigger value="new-grad">New Grad</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        {filtered.map((j) => (
-          <Card key={j.id} className="transition-all hover:-translate-y-0.5 hover:shadow-sm">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <Building2 className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs text-muted-foreground">{j.company}</div>
-                  <div className="font-medium leading-snug">{j.title}</div>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {j.location}
-                    </span>
-                    <span>·</span>
-                    <span>{j.salary}</span>
-                    <span>·</span>
-                    <span>{j.posted}</span>
-                  </div>
-                </div>
-                <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-career-soft text-center text-career">
-                  <div className="text-xs font-semibold leading-none">{j.matchScore}</div>
-                  <div className="mt-0.5 text-[9px] uppercase tracking-wide">match</div>
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">{j.reasoning}</p>
-              <div className="mt-3 flex justify-end">
-                <Button size="sm" variant="outline" onClick={() => setDetail(j)}>
-                  View details
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {ALL_KINDS.map((kind) => (
+          <button
+            key={kind}
+            onClick={() => toggleKind(kind)}
+            className={cn(
+              "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              activeKinds.has(kind)
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-muted-foreground hover:bg-muted",
+            )}
+          >
+            {KIND_LABELS[kind]}
+            <span className="ml-1.5 opacity-70">
+              {allJobs.filter((j) => j.kind === kind).length}
+            </span>
+          </button>
         ))}
       </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <div className="mt-3 text-sm">Searching jobs and matching against your profile...</div>
+          <div className="mt-1 text-xs text-muted-foreground">SerpAPI + Cognee knowledge graph</div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <Building2 className="h-10 w-10 opacity-30" />
+          <div className="mt-3 text-sm">No matching jobs found</div>
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {filtered.map((j, i) => (
+            <Card key={`${j.id}-${i}`} className="transition-all hover:-translate-y-0.5 hover:shadow-sm">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Building2 className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {j.company}
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        {KIND_LABELS[j.kind || ""] || j.kind}
+                      </Badge>
+                    </div>
+                    <div className="font-medium leading-snug">{j.title}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {j.location || "Munich"}
+                      </span>
+                      {j.salary && (
+                        <>
+                          <span>·</span>
+                          <span>{j.salary}</span>
+                        </>
+                      )}
+                      {j.posted_at && (
+                        <>
+                          <span>·</span>
+                          <span>{j.posted_at}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg text-center",
+                      j.match_score >= 70 && "bg-career-soft text-career",
+                      j.match_score >= 40 && j.match_score < 70 && "bg-social-soft text-social",
+                      j.match_score < 40 && "bg-destructive/10 text-destructive",
+                    )}
+                  >
+                    <div className="text-xs font-semibold leading-none">{j.match_score}</div>
+                    <div className="mt-0.5 text-[9px] uppercase tracking-wide">match</div>
+                  </div>
+                </div>
+                {j.reasoning && (
+                  <p className="mt-3 text-xs italic text-muted-foreground">{stripMarkdown(j.reasoning)}</p>
+                )}
+                <div className="mt-3 flex justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setDetail(j)}>
+                    View details
+                  </Button>
+                  {j.source_url && (
+                    <Button size="sm" onClick={() => window.open(j.source_url, "_blank")}>
+                      Apply
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
         <DialogContent className="max-w-2xl">
           {detail ? (
             <>
               <DialogHeader>
-                <div className="text-xs text-muted-foreground">{detail.company}</div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {detail.company}
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                    {KIND_LABELS[detail.kind || ""] || detail.kind}
+                  </Badge>
+                </div>
                 <DialogTitle>{detail.title}</DialogTitle>
                 <DialogDescription>
-                  {detail.location} · {detail.salary} · posted {detail.posted}
+                  {detail.location || "Munich"}{detail.salary ? ` · ${detail.salary}` : ""}{detail.posted_at ? ` · ${detail.posted_at}` : ""}
                 </DialogDescription>
               </DialogHeader>
-              <div className="rounded-lg bg-career-soft/50 p-3 text-sm text-career">
-                <span className="font-medium">Match: {detail.matchScore}% — </span>
-                {detail.reasoning}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                We&apos;re looking for a working student to help scale our ML infrastructure. You&apos;ll work on
-                distributed training pipelines, feature stores, and model serving. Must be comfortable with Python and
-                cloud-native tooling.
+              {detail.reasoning && (
+                <div className="rounded-lg bg-career-soft/50 p-3 text-sm text-career">
+                  <span className="font-medium">Match: {detail.match_score}% — </span>
+                  {stripMarkdown(detail.reasoning)}
+                </div>
+              )}
+              <div className="max-h-60 overflow-y-auto text-sm text-muted-foreground whitespace-pre-line">
+                {detail.description?.slice(0, 1500) || "No description available."}
               </div>
               <DialogFooter className="sm:justify-between">
-                <Button variant="outline">Save</Button>
-                <Button
-                  onClick={() => setOptimizeOpen(true)}
-                  className="gap-1.5"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Optimize my CV for this role
-                </Button>
+                <Button variant="outline" onClick={() => setDetail(null)}>Close</Button>
+                {detail.source_url && (
+                  <Button onClick={() => window.open(detail.source_url, "_blank")}>
+                    Apply on Job Board
+                  </Button>
+                )}
               </DialogFooter>
             </>
           ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={optimizeOpen} onOpenChange={setOptimizeOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Tailored CV — diff preview
-            </DialogTitle>
-            <DialogDescription>
-              Reordered experience, surfaced relevant courses, and keyword alignment for {detail?.company}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-lg border border-border p-4">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Original
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="line-through text-muted-foreground">Java, Python, HTML</div>
-                <div className="line-through text-muted-foreground">Tetris Clone (2022)</div>
-                <div className="text-muted-foreground">Coursework: IN0007, MA0901</div>
-              </div>
-            </div>
-            <div className="rounded-lg border border-career/40 bg-career-soft/30 p-4">
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-career">Tailored</div>
-              <div className="space-y-2 text-xs">
-                <div>
-                  <span className="rounded bg-career-soft px-1 text-career">Python, PyTorch, Kubernetes, TypeScript</span>
-                </div>
-                <div>raft-visualizer — distributed consensus demo (58★)</div>
-                <div>
-                  Coursework: IN2064 <span className="text-career">ML (1.3)</span>, IN2086{" "}
-                  <span className="text-career">Distributed Systems</span>, IN0007, MA0901
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="sm:justify-between">
-            <Button variant="outline" onClick={() => setOptimizeOpen(false)}>
-              Close
-            </Button>
-            <Button
-              className="gap-1.5"
-              onClick={() => {
-                toast.success("Tailored CV downloaded")
-                setOptimizeOpen(false)
-              }}
-            >
-              <Download className="h-4 w-4" />
-              Download PDF
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
