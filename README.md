@@ -2,7 +2,7 @@
 
 **3rd Place — TUM.ai Makeathon 2026 (Reply Challenge: The Campus Co-Pilot Suite)**
 
-An autonomous AI chief-of-staff for TUM students. Built in ~36 hours by a team of 4. Campus Co-Pilot collapses the fragmented maze of TUMonline, Moodle, ZHS, Mensa, Luma, and SerpAPI into a single conversational interface that **acts** on behalf of the student -- booking sports slots, matching jobs to your profile via a knowledge graph, generating quizzes from lecture slides, and keeping everything in sync with Google Calendar.
+An autonomous AI chief-of-staff for TUM students. Built in ~36 hours by a team of 5. Campus Co-Pilot collapses the fragmented maze of TUMonline, Moodle, ZHS, Mensa, Luma, and SerpAPI into a single conversational interface that **acts** on behalf of the student -- booking sports slots, matching jobs to your profile via a knowledge graph, generating quizzes from lecture slides, and keeping everything in sync with Google Calendar.
 
 ---
 
@@ -123,7 +123,7 @@ cd frontend && pnpm install && pnpm dev
 
 ## Team
 
-Built by Samet Degirmenci, Baris Can, Arved, and Emir.
+Built by Samet, Baris, Arved, Emir and Mert.
 
 ---
 
