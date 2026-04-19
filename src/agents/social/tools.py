@@ -16,11 +16,10 @@ from src.integrations.zhs import search_courses as _search_zhs
 from src.integrations.zhs_booking import book_zhs_course as _book_course
 from src.integrations.zhs_booking import get_course_details as _get_details
 
+from src.config import get_settings
+
 if TYPE_CHECKING:
     from src.models.event import EsnEvent
-
-TUM_USERNAME = "go79sax"
-TUM_PASSWORD = "Polyu03@@@"
 
 
 @tool
@@ -61,8 +60,9 @@ async def get_zhs_course_schedule(
     Args:
         course_name: Course to look up (e.g. 'basketball free play', 'yoga hatha').
     """
+    settings = get_settings()
     result: dict[str, Any] = await _get_details(
-        tum_username=TUM_USERNAME, tum_password=TUM_PASSWORD, course_name=course_name
+        tum_username=settings.tum_username, tum_password=settings.tum_password, course_name=course_name
     )
     return result
 
@@ -70,6 +70,7 @@ async def get_zhs_course_schedule(
 @tool
 async def book_zhs(
     course_name: str,
+    student_id: str,
     course_index: int = 0,
     slot_id: str = "",
 ) -> dict[str, Any]:
@@ -83,16 +84,48 @@ async def book_zhs(
 
     Args:
         course_name: Course to book (e.g. 'basketball free play').
+        student_id: The student making the booking.
         course_index: For weekly courses, which option (0 = first, 1 = second, etc.).
         slot_id: For free play, the slot ID from the schedule results.
     """
+    settings = get_settings()
     result: dict[str, Any] = await _book_course(
-        tum_username=TUM_USERNAME,
-        tum_password=TUM_PASSWORD,
+        tum_username=settings.tum_username,
+        tum_password=settings.tum_password,
         course_name=course_name,
         course_index=course_index,
         slot_id=slot_id or None,
     )
+
+    if result.get("status") in ("confirmed", "pending", "booked"):
+        from datetime import datetime
+
+        from src.cal.orchestrator import register_booking
+
+        start_str = result.get("start_time") or result.get("time", "")
+        end_str = result.get("end_time", "")
+        date_str = result.get("date", "")
+        if start_str and date_str:
+            try:
+                start_dt = datetime.fromisoformat(f"{date_str}T{start_str}")
+                end_dt = (
+                    datetime.fromisoformat(f"{date_str}T{end_str}")
+                    if end_str
+                    else start_dt.replace(hour=start_dt.hour + 2)
+                )
+                booking = await register_booking(
+                    student_id=student_id,
+                    kind="sport",
+                    title=f"ZHS: {course_name}",
+                    starts_at=start_dt,
+                    ends_at=end_dt,
+                    location=result.get("location", "ZHS München"),
+                    agent="social",
+                )
+                result["calendar"] = booking
+            except Exception:
+                pass
+
     return result
 
 
@@ -129,14 +162,37 @@ async def get_event_details(event_id: str) -> dict[str, Any]:
 
 
 @tool
+async def open_event_registration(event_id: str) -> dict[str, str]:
+    """Open the ESN TUMi event registration page in the student's browser.
+
+    Use this when the student wants to register for an event. It opens the
+    tumi.esn.world page directly so they can log in and sign up.
+
+    Args:
+        event_id: The event ID from search results or get_event_details.
+    """
+    import asyncio
+    import subprocess
+
+    url = f"https://tumi.esn.world/events/{event_id}"
+    await asyncio.to_thread(
+        subprocess.run,
+        ["open", "-na", "Google Chrome", "--args", "--new-window", url],
+        check=False,
+    )
+    return {"status": "opened", "url": url}
+
+
+@tool
 async def get_mensa_menu(
     mensa: str = "mensa-garching",
     vegetarian_only: bool = False,
     vegan_only: bool = False,
-) -> list[dict[str, Any]]:
+) -> list[dict[str, Any]] | dict[str, str]:
     """Get today's Mensa menu from the TUM eat-api.
 
-    Real data from TUM Studentenwerk canteens. Only available on weekdays.
+    Real data from TUM Studentenwerk canteens. Only available on weekdays
+    (Mon-Fri). Returns an error dict on weekends — do NOT retry.
 
     Args:
         mensa: Canteen slug — popular: 'mensa-garching', 'mensa-arcisstr',
@@ -144,4 +200,13 @@ async def get_mensa_menu(
         vegetarian_only: Only vegetarian options.
         vegan_only: Only vegan options.
     """
-    return await _get_menu(mensa=mensa, vegetarian_only=vegetarian_only, vegan_only=vegan_only)
+    from datetime import date
+
+    today = date.today()
+    if today.weekday() >= 5:
+        return {"error": "Mensa is closed on weekends. Try again on a weekday.", "recoverable": False}
+
+    result = await _get_menu(mensa=mensa, vegetarian_only=vegetarian_only, vegan_only=vegan_only)
+    if not result:
+        return {"error": f"No menu available for {mensa} today ({today.isoformat()}).", "recoverable": False}
+    return result

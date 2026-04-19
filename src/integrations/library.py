@@ -1,166 +1,139 @@
-"""Mock TUM library study-room integration.
+"""TUM library room booking integration via anny.eu.
 
-In live mode this would hit the library booking system.
-For the hackathon demo, returns realistic fake data.
+Wraps the Playwright-based anny_browser module with retry logic.
+Provides search_rooms, get_room_schedule, and book_room for the academic agent.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
 
+from src.lib.anny_browser import (
+    book_room as _browser_book_room,
+)
+from src.lib.anny_browser import (
+    list_branches as _list_branches,
+)
+from src.lib.anny_browser import (
+    scrape_rooms_and_slots as _scrape_rooms_and_slots,
+)
+from src.lib.anny_browser import (
+    verify_booking as _browser_verify_booking,
+)
 from src.lib.logging import get_logger
+from src.lib.retry import retry_external
 
 logger = get_logger(__name__)
 
-MOCK_ROOMS: list[dict[str, Any]] = [
-    {
-        "room_id": "lib-sr-101",
-        "name": "Silent Study Room 101",
-        "building": "Teilbibliothek Stammgelände",
-        "capacity": 1,
-        "has_monitor": False,
-        "has_whiteboard": False,
-    },
-    {
-        "room_id": "lib-sr-202",
-        "name": "Group Study Room 202",
-        "building": "Teilbibliothek Stammgelände",
-        "capacity": 6,
-        "has_monitor": True,
-        "has_whiteboard": True,
-    },
-    {
-        "room_id": "lib-sr-303",
-        "name": "Group Study Room 303",
-        "building": "Teilbibliothek Garching",
-        "capacity": 4,
-        "has_monitor": True,
-        "has_whiteboard": False,
-    },
-    {
-        "room_id": "lib-sr-404",
-        "name": "Silent Study Room 404",
-        "building": "Teilbibliothek Garching",
-        "capacity": 1,
-        "has_monitor": False,
-        "has_whiteboard": False,
-    },
-    {
-        "room_id": "lib-sr-505",
-        "name": "Presentation Room 505",
-        "building": "Teilbibliothek Stammgelände",
-        "capacity": 10,
-        "has_monitor": True,
-        "has_whiteboard": True,
-    },
-]
+
+@retry_external()
+async def list_library_branches() -> list[dict[str, str]]:
+    """List all TUM library branches available for room booking."""
+    return await _list_branches()
 
 
-def _generate_slots(date: datetime) -> list[dict[str, str]]:
-    """Generate hourly availability slots for a given date."""
-    base = date.replace(hour=8, minute=0, second=0, microsecond=0)
-    slots: list[dict[str, str]] = []
-    for hour_offset in range(12):
-        start = base + timedelta(hours=hour_offset)
-        end = start + timedelta(hours=1)
-        slots.append(
-            {
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-            }
-        )
-    return slots
-
-
+@retry_external()
 async def search_rooms(
     *,
-    date: str,
-    duration_hours: int = 2,
-    capacity: int = 1,
-    building: str | None = None,
-) -> list[dict[str, Any]]:
-    """Search for available library study rooms.
+    tum_username: str,
+    tum_password: str,
+    branch: str,
+    target_date: str | None = None,
+) -> dict[str, Any]:
+    """Search available rooms and time slots at a branch library.
 
     Args:
-        date: ISO-format date string (e.g. "2026-04-18").
-        duration_hours: Desired booking duration in hours.
-        capacity: Minimum room capacity.
-        building: Optional building filter substring.
+        tum_username: TUM username for SSO.
+        tum_password: TUM password for SSO.
+        branch: Branch slug (e.g. 'mathematics-informatics', 'main-campus').
+        target_date: Day number to select (e.g. '21'). Defaults to today.
 
     Returns:
-        List of available rooms with their slots.
+        Dict with rooms, available start/end times, dates, and branch info.
     """
-    logger.info(
-        "library_search_rooms",
-        date=date,
-        duration_hours=duration_hours,
-        capacity=capacity,
-        building=building,
+    logger.info("library_search_rooms", branch=branch, target_date=target_date)
+
+    result: dict[str, Any] = await _scrape_rooms_and_slots(
+        username=tum_username,
+        password=tum_password,
+        branch_slug=branch,
+        target_date=target_date,
     )
-
-    parsed_date = datetime.fromisoformat(date).replace(tzinfo=UTC)
-
-    results: list[dict[str, Any]] = []
-    for room in MOCK_ROOMS:
-        if room["capacity"] < capacity:
-            continue
-        if building and building.lower() not in room["building"].lower():
-            continue
-
-        slots = _generate_slots(parsed_date)
-        contiguous: list[dict[str, str]] = []
-        for i in range(len(slots) - duration_hours + 1):
-            contiguous.append(
-                {
-                    "start": slots[i]["start"],
-                    "end": slots[i + duration_hours - 1]["end"],
-                }
-            )
-
-        results.append({**room, "available_slots": contiguous})
-
-    return results
+    return result
 
 
+@retry_external()
 async def book_room(
     *,
-    room_id: str,
-    start: str,
-    end: str,
-    student_id: str,
+    tum_username: str,
+    tum_password: str,
+    branch: str,
+    room_name: str,
+    date_day: str,
+    start_time: str,
+    end_time: str,
+    num_persons: int = 3,
 ) -> dict[str, Any]:
-    """Book a library study room.
+    """Book a specific room at a TUM library branch (full checkout).
 
     Args:
-        room_id: The room identifier.
-        start: ISO-format start datetime.
-        end: ISO-format end datetime.
-        student_id: The student making the booking.
+        tum_username: TUM username for SSO.
+        tum_password: TUM password for SSO.
+        branch: Branch slug (e.g. 'mathematics-informatics').
+        room_name: Room name (e.g. 'Group Room 1').
+        date_day: Day number in calendar (e.g. '21').
+        start_time: Start time (e.g. '10:00').
+        end_time: End time (e.g. '12:00').
+        num_persons: Number of persons (3-8, default 3).
 
     Returns:
-        Booking confirmation with external reference.
+        Dict with status, message, booking details, and qr_code_base64 if available.
     """
     logger.info(
         "library_book_room",
-        room_id=room_id,
-        start=start,
-        end=end,
-        student_id=student_id,
+        branch=branch,
+        room_name=room_name,
+        date_day=date_day,
+        start_time=start_time,
+        end_time=end_time,
+        num_persons=num_persons,
     )
 
-    matching = [r for r in MOCK_ROOMS if r["room_id"] == room_id]
-    if not matching:
-        return {"error": f"Room {room_id} not found", "recoverable": False}
+    result: dict[str, Any] = await _browser_book_room(
+        username=tum_username,
+        password=tum_password,
+        branch_slug=branch,
+        room_name=room_name,
+        date_day=date_day,
+        start_time=start_time,
+        end_time=end_time,
+        num_persons=num_persons,
+    )
+    return result
 
-    return {
-        "booking_id": f"lib-booking-{uuid4().hex[:8]}",
-        "room_id": room_id,
-        "room_name": matching[0]["name"],
-        "building": matching[0]["building"],
-        "start": start,
-        "end": end,
-        "status": "confirmed",
-        "student_id": student_id,
-    }
+
+@retry_external()
+async def verify_booking(
+    *,
+    tum_username: str,
+    tum_password: str,
+    booking_url: str,
+) -> dict[str, Any]:
+    """Verify a booking and retrieve its QR code.
+
+    Args:
+        tum_username: TUM username for SSO.
+        tum_password: TUM password for SSO.
+        booking_url: Full manage booking URL from the booking result.
+
+    Returns:
+        Dict with booking status and qr_code_base64 if available.
+    """
+    logger.info("library_verify_booking", url=booking_url)
+
+    result: dict[str, Any] = await _browser_verify_booking(
+        username=tum_username,
+        password=tum_password,
+        booking_url=booking_url,
+    )
+    return result
