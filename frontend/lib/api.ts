@@ -122,6 +122,10 @@ export async function listDeadlines(courseId?: string): Promise<Deadline[]> {
   }))
 }
 
+export function syncDeadlinesToCalendar(): Promise<{ synced: number; skipped: number; total: number }> {
+  return request("/api/academic/deadlines/sync-calendar", { method: "POST" })
+}
+
 // --- Synced courses ---
 
 export interface SyncedCourse {

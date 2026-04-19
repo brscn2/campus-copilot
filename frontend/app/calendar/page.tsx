@@ -26,12 +26,12 @@ import { weekDays } from "@/lib/mock-data"
 import type { AgentType } from "@/lib/mock-data"
 import {
   listCalendarEvents,
-  listDeadlines,
+  syncDeadlinesToCalendar,
   createCalendarEvent,
   deleteCalendarEvent,
   getCalendarStatus,
 } from "@/lib/api"
-import type { CalendarEventData, Deadline } from "@/lib/api"
+import type { CalendarEventData } from "@/lib/api"
 import {
   AlertTriangle,
   ChevronLeft,
@@ -85,40 +85,6 @@ function getWeekDates(weekOffset: number): string[] {
   })
 }
 
-function deadlinesToCalendarEvents(
-  deadlines: Deadline[],
-  weekOffset: number,
-): CalendarEventData[] {
-  const monday = getWeekMonday(weekOffset)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  sunday.setHours(23, 59, 59, 999)
-
-  return deadlines
-    .filter((d) => {
-      const due = new Date(d.dueAt)
-      return due >= monday && due <= sunday
-    })
-    .map((d) => {
-      const due = new Date(d.dueAt)
-      const day = (due.getDay() + 6) % 7
-      const dueHour = due.getHours() + due.getMinutes() / 60
-      const start = Math.max(0, dueHour - 0.5)
-      const end = dueHour
-      return {
-        id: `deadline-${d.id}`,
-        title: `📅 ${d.course}: ${d.task}`,
-        day,
-        start,
-        end,
-        agent: "academic" as const,
-        location: `Due ${due.getHours()}:${String(due.getMinutes()).padStart(2, "0")} · ${d.weight}`,
-        conflict: false,
-        google_event_id: null,
-      }
-    })
-}
-
 export default function CalendarPage() {
   const [events, setEvents] = React.useState<CalendarEventData[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -137,12 +103,9 @@ export default function CalendarPage() {
   const fetchEvents = React.useCallback(async () => {
     setLoading(true)
     try {
-      const [calData, deadlines] = await Promise.all([
-        listCalendarEvents(weekOffset),
-        listDeadlines(),
-      ])
-      const deadlineEvents = deadlinesToCalendarEvents(deadlines, weekOffset)
-      setEvents([...calData.events, ...deadlineEvents])
+      await syncDeadlinesToCalendar().catch(() => {})
+      const calData = await listCalendarEvents(weekOffset)
+      setEvents(calData.events)
     } catch {
       setEvents([])
     } finally {

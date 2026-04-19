@@ -11,6 +11,7 @@ import hashlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from playwright.async_api import BrowserContext, Page, async_playwright
@@ -478,7 +479,7 @@ def _parse_german_date(text: str) -> str:
         hour, minute = int(time_match.group(1)), int(time_match.group(2))
 
     try:
-        dt = datetime(year, month, day, hour, minute, tzinfo=UTC)
+        dt = datetime(year, month, day, hour, minute, tzinfo=ZoneInfo("Europe/Berlin"))
         return dt.isoformat()
     except (ValueError, OverflowError):
         return text

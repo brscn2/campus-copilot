@@ -47,6 +47,58 @@ async def list_deadlines(course_id: str | None = None) -> list[dict[str, Any]]:
     return await get_deadlines(student_id=DEMO_STUDENT_ID, course_id=course_id)
 
 
+@router.post("/deadlines/sync-calendar")
+async def sync_deadlines_to_calendar() -> dict[str, Any]:
+    """Create Google Calendar events for all deadlines, skipping duplicates."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from src.integrations.gcal import create_event, list_events
+
+    deadlines = await get_deadlines(student_id=DEMO_STUDENT_ID)
+    if not deadlines:
+        return {"synced": 0, "skipped": 0, "total": 0}
+
+    all_dues = [datetime.fromisoformat(d["due_at"]) for d in deadlines]
+    time_min = min(all_dues) - timedelta(days=1)
+    time_max = max(all_dues) + timedelta(days=1)
+    tz = ZoneInfo("Europe/Berlin")
+    if time_min.tzinfo is None:
+        time_min = time_min.replace(tzinfo=tz)
+    if time_max.tzinfo is None:
+        time_max = time_max.replace(tzinfo=tz)
+
+    existing = await list_events(
+        student_id=DEMO_STUDENT_ID,
+        time_min=time_min,
+        time_max=time_max,
+    )
+    existing_titles = {e.title for e in existing}
+
+    synced = 0
+    skipped = 0
+    for d in deadlines:
+        title = f"\U0001f4c5 Deadline: {d['course_id']} \u2014 {d['title']}"
+        if title in existing_titles:
+            skipped += 1
+            continue
+        due = datetime.fromisoformat(d["due_at"])
+        starts_at = due - timedelta(minutes=30)
+        await create_event(
+            student_id=DEMO_STUDENT_ID,
+            title=title,
+            starts_at=starts_at,
+            ends_at=due,
+            location="",
+            description=f"Weight: {d.get('weight', 0):.0%} | Source: {d.get('source', 'moodle')}",
+        )
+        existing_titles.add(title)
+        synced += 1
+
+    logger.info("deadlines_synced_to_calendar", synced=synced, skipped=skipped)
+    return {"synced": synced, "skipped": skipped, "total": len(deadlines)}
+
+
 @router.get("/thesis")
 async def list_thesis(
     keywords: str | None = None,
