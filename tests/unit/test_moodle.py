@@ -74,9 +74,7 @@ async def test_get_slides_returns_lectures(monkeypatch: pytest.MonkeyPatch) -> N
     for s in slides:
         assert "filename" in s
         assert "url" in s
-    assert all(
-        s["filename"].lower().endswith((".pdf", ".pptx", ".ppt", ".key")) for s in slides
-    )
+    assert all(s["filename"].lower().endswith((".pdf", ".pptx", ".ppt", ".key")) for s in slides)
 
 
 @pytest.mark.asyncio

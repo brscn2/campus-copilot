@@ -65,6 +65,7 @@ import {
   Users as UsersIcon,
 } from "lucide-react"
 import { toast } from "sonner"
+import { successToast } from "@/components/success-burst"
 import { cn } from "@/lib/utils"
 
 const _SEMESTER_RE = /(SoSe|WiSe)\s+(\d{4})/
@@ -344,7 +345,7 @@ function CoursesTab() {
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {group.items.map((sc) => {
+                  {group.items.map((sc, cardIndex) => {
                     const mastery = masteryMap[sc.dataset_name] ?? 0
                     const isDragging = draggingId === sc.dataset_name
                     return (
@@ -362,8 +363,9 @@ function CoursesTab() {
                             setSelectedSynced(sc)
                           }
                         }}
+                        style={{ animationDelay: `${cardIndex * 60}ms` }}
                         className={cn(
-                          "group cursor-grab text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 active:cursor-grabbing",
+                          "animate-stagger-fade-in group cursor-grab text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 active:cursor-grabbing",
                           isDragging && "opacity-50",
                         )}
                       >
@@ -1449,7 +1451,7 @@ function DeadlinesTab() {
             </Button>
             <Button
               onClick={() => {
-                toast.success("Study block added to calendar")
+                successToast("Study block added to calendar")
                 setScheduleOpen(null)
               }}
             >
@@ -1468,8 +1470,8 @@ function ThesisTab() {
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
-        {theses.map((t) => (
-          <Card key={t.id}>
+        {theses.map((t, i) => (
+          <Card key={t.id} className="animate-stagger-fade-in" style={{ animationDelay: `${i * 75}ms` }}>
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1580,7 +1582,7 @@ alex.mueller@tum.de`,
           </Button>
           <Button
             onClick={() => {
-              toast.success("Email sent to " + thesis?.professor)
+              successToast("Email sent to " + thesis?.professor)
               onClose()
             }}
           >
@@ -1643,7 +1645,7 @@ function StudyRoomTab() {
               </div>
               <Button
                 className="gap-1.5 sm:self-center"
-                onClick={() => toast.success(`${r.name} booked for 14:00 – 17:00`)}
+                onClick={() => successToast(`${r.name} booked for 14:00 – 17:00`)}
               >
                 Book <ArrowRight className="h-3.5 w-3.5" />
               </Button>

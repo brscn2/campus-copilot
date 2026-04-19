@@ -25,6 +25,7 @@ async def list_courses(semester: str | None = None) -> list[dict[str, Any]]:
     """List enrolled Moodle courses, optionally filtered by semester."""
     return await get_courses(semester=semester)
 
+
 @router.get("/courses/{course_id}/uploads")
 async def list_uploads(course_id: str) -> list[dict[str, Any]]:
     """List resources/uploads for a Moodle course."""

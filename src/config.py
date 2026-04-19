@@ -7,7 +7,6 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
 
 
@@ -71,9 +70,16 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
     google_calendar_mode: Literal["mock", "live"] = "mock"
 
-    # Jobs / SerpAPI
-    serpapi_api_key: str = ""
+    # Jobs / TheirStack
+    theirstack_api_key: str = ""
     jobs_mode: Literal["mock", "live"] = "mock"
+    theirstack_results_per_call: int = 10
+    theirstack_cache_dir: str = ".cache/jobs"
+    theirstack_cache_ttl_seconds: int = 86400
+
+    # Match result cache
+    match_cache_dir: str = ".cache/matches"
+    match_cache_ttl_seconds: int = 14400
 
     # S3
     s3_bucket: str = "campus-copilot-demo"

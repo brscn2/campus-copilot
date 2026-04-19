@@ -33,7 +33,9 @@ def _parse_events_from_markdown(md: str) -> list[dict[str, Any]]:
     while i < len(lines):
         line = lines[i].strip()
 
-        date_match = re.match(r"^(Today|Tomorrow|(?:Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+)$", line)
+        date_match = re.match(
+            r"^(Today|Tomorrow|(?:Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d+)$", line
+        )
         if date_match:
             current_date = date_match.group(1)
             i += 1
@@ -50,8 +52,18 @@ def _parse_events_from_markdown(md: str) -> list[dict[str, Any]]:
             title = link_match.group(1)
             url = link_match.group(2)
 
-            if any(skip in url for skip in ["/signin", "/discover", "/pricing", "/ios",
-                                             "/android", "/create", "/munich/map"]):
+            if any(
+                skip in url
+                for skip in [
+                    "/signin",
+                    "/discover",
+                    "/pricing",
+                    "/ios",
+                    "/android",
+                    "/create",
+                    "/munich/map",
+                ]
+            ):
                 i += 1
                 continue
             if "Cover Image" in title or title in ("Luma Home", "Map"):
@@ -74,9 +86,7 @@ def _parse_events_from_markdown(md: str) -> list[dict[str, Any]]:
                 if not next_line or next_line == "\u200b":
                     continue
 
-                img_match = re.match(
-                    r"!\[.*?\]\((https://images\.lumacdn\.com/.+?)\)", next_line
-                )
+                img_match = re.match(r"!\[.*?\]\((https://images\.lumacdn\.com/.+?)\)", next_line)
                 if img_match and not event["image"]:
                     event["image"] = img_match.group(1)
                     continue
@@ -131,11 +141,13 @@ async def fetch_munich_events(use_cache: bool = True) -> list[dict[str, Any]]:
         return _event_cache
 
     from src.config import get_settings
+
     settings = get_settings()
 
     firecrawl_key = getattr(settings, "firecrawl_api_key", "")
     if not firecrawl_key:
         import os
+
         firecrawl_key = os.environ.get("FIRECRAWL_API_KEY", "")
 
     if not firecrawl_key:

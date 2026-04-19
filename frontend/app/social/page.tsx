@@ -341,10 +341,11 @@ function ZhsTab() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {courses.map((c) => (
+          {courses.map((c, i) => (
             <Card
               key={c.id}
-              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+              className="animate-stagger-fade-in cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+              style={{ animationDelay: `${i * 60}ms` }}
               onClick={() => handleViewSchedule(c)}
             >
               {c.poster_url ? (
@@ -691,10 +692,11 @@ function EventsTab() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {events.map((e) => (
+          {events.map((e, i) => (
             <Card
               key={e.id}
-              className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+              className="animate-stagger-fade-in cursor-pointer overflow-hidden transition-shadow hover:shadow-md"
+              style={{ animationDelay: `${i * 60}ms` }}
               onClick={() => setSelectedEvent(e)}
             >
               <div className="flex h-24 items-end bg-gradient-to-br from-social-soft to-academic-soft p-3 text-social-foreground">
