@@ -214,3 +214,47 @@ class AgentActivityRow(Base):
     student: Mapped[StudentRow] = relationship()
 
     __table_args__ = (Index("ix_agent_activities_student_created", "student_id", "created_at"),)
+
+
+class CourseFileRow(Base):
+    """A file (PDF) synced from S3 — shared across all students."""
+
+    __tablename__ = "course_files"
+
+    dataset_name: Mapped[str] = mapped_column(String(100), index=True)
+    s3_key: Mapped[str] = mapped_column(String(500), unique=True)
+    filename: Mapped[str] = mapped_column(String(500))
+    display_name: Mapped[str] = mapped_column(String(500))
+    category: Mapped[str] = mapped_column(String(20))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    core_concepts: Mapped[list[str]] = mapped_column(JSONB, default=list)
+
+    progress: Mapped[list[StudentFileProgressRow]] = relationship(
+        back_populates="course_file", cascade="all, delete-orphan"
+    )
+
+
+class StudentFileProgressRow(Base):
+    """Per-student completion tracking for a course file."""
+
+    __tablename__ = "student_file_progress"
+
+    student_id: Mapped[str] = mapped_column(ForeignKey("students.id"))
+    course_file_id: Mapped[str] = mapped_column(
+        ForeignKey("course_files.id", ondelete="CASCADE")
+    )
+    completed: Mapped[bool] = mapped_column(default=False)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    course_file: Mapped[CourseFileRow] = relationship(back_populates="progress")
+
+    __table_args__ = (
+        Index(
+            "uq_student_file_progress",
+            "student_id",
+            "course_file_id",
+            unique=True,
+        ),
+    )
