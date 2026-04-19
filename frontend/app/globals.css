@@ -231,4 +231,80 @@
   .animate-agent-reveal {
     animation: agent-reveal 0.35s ease-out both;
   }
+  .animate-typewriter-cursor {
+    animation: typewriter-cursor 0.53s step-end infinite;
+  }
+  .animate-burst-ring {
+    animation: burst-ring 0.5s ease-out forwards;
+  }
+  .animate-burst-check {
+    animation: burst-check 0.4s ease-out 0.15s forwards;
+  }
+  .animate-burst-particle {
+    animation: burst-particle 0.6s ease-out forwards;
+  }
+  .animate-slide-in-left {
+    animation: slide-in-left 0.3s ease-out both;
+  }
+  .animate-slide-in-right {
+    animation: slide-in-right 0.3s ease-out both;
+  }
+  .animate-conflict-shake {
+    animation: conflict-shake 0.2s ease-in-out 0.3s both;
+  }
+  .animate-conflict-flash {
+    animation: conflict-flash 0.3s ease-out 0.3s both;
+  }
+  .animate-resolve-fade-in {
+    animation: resolve-fade-in 0.4s ease-out 0.9s both;
+  }
+}
+
+@keyframes typewriter-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes burst-ring {
+  0% { transform: scale(0); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes burst-check {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes burst-particle {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: var(--particle-to) scale(0); opacity: 0; }
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes conflict-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+@keyframes conflict-flash {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes resolve-fade-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }

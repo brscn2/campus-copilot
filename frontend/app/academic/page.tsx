@@ -65,6 +65,7 @@ import {
   Users as UsersIcon,
 } from "lucide-react"
 import { toast } from "sonner"
+import { successToast } from "@/components/success-burst"
 import { cn } from "@/lib/utils"
 
 const _SEMESTER_RE = /(SoSe|WiSe)\s+(\d{4})/
@@ -1450,7 +1451,7 @@ function DeadlinesTab() {
             </Button>
             <Button
               onClick={() => {
-                toast.success("Study block added to calendar")
+                successToast("Study block added to calendar")
                 setScheduleOpen(null)
               }}
             >
@@ -1581,7 +1582,7 @@ alex.mueller@tum.de`,
           </Button>
           <Button
             onClick={() => {
-              toast.success("Email sent to " + thesis?.professor)
+              successToast("Email sent to " + thesis?.professor)
               onClose()
             }}
           >
@@ -1644,7 +1645,7 @@ function StudyRoomTab() {
               </div>
               <Button
                 className="gap-1.5 sm:self-center"
-                onClick={() => toast.success(`${r.name} booked for 14:00 – 17:00`)}
+                onClick={() => successToast(`${r.name} booked for 14:00 – 17:00`)}
               >
                 Book <ArrowRight className="h-3.5 w-3.5" />
               </Button>

@@ -125,6 +125,8 @@ export function ChatDrawer() {
   ])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
+  const [typingPrompt, setTypingPrompt] = React.useState<string | null>(null)
+  const typingRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const scrollRef = React.useRef<HTMLDivElement>(null)
 
   const send = React.useCallback((text: string) => {
@@ -266,11 +268,25 @@ export function ChatDrawer() {
   }, [])
 
   React.useEffect(() => {
-    if (open && initialPrompt) {
-      send(initialPrompt)
-      consumeInitialPrompt()
-    }
-  }, [open, initialPrompt, send, consumeInitialPrompt])
+    if (!open || !initialPrompt) return
+    const full = initialPrompt
+    consumeInitialPrompt()
+    let idx = 0
+    setTypingPrompt("")
+    setIsLoading(true)
+    const timer = setInterval(() => {
+      idx++
+      if (idx <= full.length) {
+        setTypingPrompt(full.slice(0, idx))
+      } else {
+        clearInterval(timer)
+        setTypingPrompt(null)
+        send(full)
+      }
+    }, 30)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   React.useEffect(() => {
     if (scrollRef.current) {
@@ -366,6 +382,17 @@ export function ChatDrawer() {
                   </div>
                 </div>
               ),
+            )}
+            {typingPrompt !== null && (
+              <div className="flex animate-in fade-in slide-in-from-bottom-2 justify-end gap-2 duration-200">
+                <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+                  {typingPrompt}
+                  <span className="animate-typewriter-cursor ml-0.5 inline-block w-0.5 h-3.5 bg-primary-foreground/80 align-middle" />
+                </div>
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback className="bg-muted text-[10px] font-semibold">{user.initials}</AvatarFallback>
+                </Avatar>
+              </div>
             )}
           </div>
         </div>
