@@ -234,6 +234,9 @@
   .animate-typewriter-cursor {
     animation: typewriter-cursor 0.53s step-end infinite;
   }
+  .animate-ticker-slide-in {
+    animation: ticker-slide-in 0.4s ease-out both;
+  }
   .animate-burst-ring {
     animation: burst-ring 0.5s ease-out forwards;
   }
@@ -307,4 +310,9 @@
 @keyframes resolve-fade-in {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes ticker-slide-in {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
