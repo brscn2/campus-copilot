@@ -28,6 +28,7 @@ extracted/
 .vscode/
 *.swp
 *.swo
+.agents/
 
 # Testing / coverage
 .coverage
