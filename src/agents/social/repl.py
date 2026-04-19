@@ -8,13 +8,14 @@ from __future__ import annotations
 import asyncio
 
 from src.agents.base import AgentInput
-from src.config import DEMO_STUDENT_ID
 from src.agents.social.graph import run
+from src.config import DEMO_STUDENT_ID
 
 
 async def main() -> None:
     """Run an interactive loop for the Social agent."""
     print("Social Agent REPL — type 'quit' to exit")
+    history: list[dict[str, str]] = []
     while True:
         query = input("\n> ")
         if query.strip().lower() in ("quit", "exit"):
@@ -23,12 +24,15 @@ async def main() -> None:
             query=query,
             session_id="repl",
             student_id=DEMO_STUDENT_ID,
+            history=history,
         )
         output = await run(agent_input)
         print(f"\n[social] {output.message}")
         if output.actions:
             for action in output.actions:
                 print(f"  -> Action: {action.action_type}: {action.description}")
+        history.append({"role": "user", "content": query})
+        history.append({"role": "assistant", "content": output.message})
 
 
 if __name__ == "__main__":

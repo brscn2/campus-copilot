@@ -17,10 +17,9 @@ from src.integrations.zhs_booking import book_zhs_course, get_course_details
 if TYPE_CHECKING:
     from src.models.event import EsnEvent
 
-router = APIRouter(prefix="/social", tags=["social"])
+from src.config import get_settings
 
-TUM_USERNAME = "go79sax"
-TUM_PASSWORD = "Polyu03@@@"
+router = APIRouter(prefix="/social", tags=["social"])
 
 
 # --- ZHS Courses (public MeiliSearch) ---
@@ -56,8 +55,9 @@ async def list_zhs_categories() -> list[dict[str, Any]]:
 @router.get("/zhs/schedule")
 async def get_zhs_schedule(course_name: str) -> dict[str, Any]:
     """Get real timetable for a ZHS course (timeslots or weekly classes)."""
+    settings = get_settings()
     result: dict[str, Any] = await get_course_details(
-        tum_username=TUM_USERNAME, tum_password=TUM_PASSWORD, course_name=course_name
+        tum_username=settings.tum_username, tum_password=settings.tum_password, course_name=course_name
     )
     return result
 
@@ -73,9 +73,10 @@ class BookingRequest(BaseModel):
 @router.post("/zhs/book")
 async def book_zhs(body: BookingRequest) -> dict[str, Any]:
     """Book a ZHS course/slot with full checkout automation."""
+    settings = get_settings()
     result: dict[str, Any] = await book_zhs_course(
-        tum_username=TUM_USERNAME,
-        tum_password=TUM_PASSWORD,
+        tum_username=settings.tum_username,
+        tum_password=settings.tum_password,
         course_name=body.course_name,
         course_index=body.course_index,
         slot_id=body.slot_id or None,

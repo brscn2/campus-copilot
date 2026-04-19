@@ -20,11 +20,13 @@ from src.agents.academic.tools import (
     get_professor_contact,
     get_progress,
     list_course_uploads,
+    list_library_branches,
     list_moodle_courses,
     search_lectures,
     search_rooms,
     search_thesis_opportunities,
     take_quiz,
+    verify_library_booking,
 )
 from src.agents.base import AgentInput, AgentOutput
 from src.lib.bedrock import get_chat_model
@@ -34,8 +36,10 @@ from src.lib.message_hygiene import sanitize_tool_messages
 logger = get_logger(__name__)
 
 TOOLS = [
+    list_library_branches,
     search_rooms,
     book_room,
+    verify_library_booking,
     search_lectures,
     get_progress,
     take_quiz,
