@@ -38,6 +38,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         async with _engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("startup_db_connected", database=get_settings().database_url.split("@")[-1])
+
+        try:
+            from src.storage.db import get_session
+            from src.storage.repositories.course_files import sync_course_files_from_s3
+
+            async for session in get_session():
+                result = await sync_course_files_from_s3(session)
+                logger.info("startup_files_synced", inserted=result.inserted, deleted=result.deleted)
+                break
+        except Exception as exc:
+            logger.warning("startup_file_sync_failed", reason=str(exc))
     except Exception as exc:
         logger.warning("startup_db_unavailable", reason=str(exc))
     yield

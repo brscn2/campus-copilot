@@ -32,12 +32,98 @@ export interface CourseFile {
   last_modified: string
 }
 
+export interface EnrichedFile {
+  id: string
+  dataset_name: string
+  s3_key: string
+  filename: string
+  display_name: string
+  category: "lecture" | "exercise"
+  sort_order: number
+  core_concepts: string[]
+  completed: boolean
+  completed_at: string | null
+}
+
+export interface FileSummary {
+  total: number
+  completed: number
+  lectures: { total: number; completed: number }
+  exercises: { total: number; completed: number }
+}
+
 export function listCourseFiles(courseId: string): Promise<{ files: CourseFile[] }> {
   return request(`/api/pipeline/files/${encodeURIComponent(courseId)}`)
 }
 
+export function listEnrichedFiles(
+  courseId: string,
+  studentId: string = "demo",
+): Promise<{ files: EnrichedFile[]; summary: FileSummary }> {
+  return request(
+    `/api/pipeline/synced/${encodeURIComponent(courseId)}/files?student_id=${encodeURIComponent(studentId)}`,
+  )
+}
+
+export function toggleFileProgress(
+  courseId: string,
+  fileId: string,
+  completed: boolean,
+  studentId: string = "demo",
+): Promise<{ file_id: string; completed: boolean }> {
+  return request(
+    `/api/pipeline/synced/${encodeURIComponent(courseId)}/files/${encodeURIComponent(fileId)}/progress`,
+    { method: "PUT", body: JSON.stringify({ student_id: studentId, completed }) },
+  )
+}
+
 export function getFileUrl(courseId: string, filename: string): Promise<{ url: string; key: string }> {
   return request(`/api/pipeline/files/${encodeURIComponent(courseId)}/${encodeURIComponent(filename)}/url`)
+}
+
+// --- Deadlines ---
+
+export interface Deadline {
+  id: string
+  course: string
+  task: string
+  due: string
+  dueAt: string
+  weight: string
+  masteryGap: number
+  priority: number
+  source: string
+}
+
+interface RawDeadline {
+  deadline_id: string
+  course_id: string
+  title: string
+  due_at: string
+  weight: number
+  mastery_gap: number
+  priority: number
+  source: string
+}
+
+export async function listDeadlines(courseId?: string): Promise<Deadline[]> {
+  const params = courseId ? `?course_id=${encodeURIComponent(courseId)}` : ""
+  const raw = await request<RawDeadline[]>(`/api/academic/deadlines${params}`)
+  return raw.map((d) => ({
+    id: d.deadline_id,
+    course: d.course_id,
+    task: d.title,
+    due: d.due_at.split("T")[0],
+    dueAt: d.due_at,
+    weight: `${Math.round(d.weight * 100)}%`,
+    masteryGap: d.mastery_gap,
+    priority: d.priority,
+    source: d.source,
+  }))
+}
+
+export function syncDeadlinesToCalendar(): Promise<{ synced: number; skipped: number; total: number }> {
+  return request("/api/academic/deadlines/sync-calendar", { method: "POST" })
 }
 
 // --- Synced courses ---
@@ -605,6 +691,124 @@ export function deleteCalendarEvent(eventId: string): Promise<void> {
 
 export function getCalendarStatus(): Promise<{ connected: boolean }> {
   return request("/api/calendar/status")
+}
+
+// --- Thesis Opportunities ---
+
+export interface ThesisOpportunity {
+  id: string
+  professor: string
+  chair: string
+  topic: string
+  match_score: number
+  reasoning: string
+  tags: string[]
+  source_url: string
+}
+
+export async function listTheses(opts?: {
+  keywords?: string
+  chair?: string
+  tags?: string
+}): Promise<ThesisOpportunity[]> {
+  const params = new URLSearchParams()
+  if (opts?.keywords) params.set("keywords", opts.keywords)
+  if (opts?.chair) params.set("chair", opts.chair)
+  if (opts?.tags) params.set("tags", opts.tags)
+  const qs = params.toString()
+  const raw = await request<ThesisOpportunity[]>(`/api/academic/thesis${qs ? `?${qs}` : ""}`)
+  return raw.map((t) => ({
+    ...t,
+    id: String(t.id),
+  }))
+}
+
+// --- Library Study Rooms ---
+
+export interface LibraryBranch {
+  slug: string
+  name: string
+  address: string
+  booking_url: string
+}
+
+export interface RoomTimeOption {
+  time: string
+  selected: boolean
+}
+
+export interface RoomDateOption {
+  day: string
+  selected: boolean
+  disabled: boolean
+}
+
+export interface ScrapedRoom {
+  name: string
+  capacity_text: string
+  capacity: number
+  selected: boolean
+}
+
+export interface RoomSearchResult {
+  rooms: ScrapedRoom[]
+  roomsAvailable: number
+  startTimes: RoomTimeOption[]
+  endTimes: RoomTimeOption[]
+  selectedDate: string | null
+  dates: RoomDateOption[]
+  monthText: string
+  features: string[]
+  description: string
+  photos: string[]
+  branch_slug: string
+  branch_name: string
+  branch_address: string
+  url: string
+}
+
+export interface RoomBookingResult {
+  status: string
+  message: string
+  url?: string
+  qr_code_base64?: string
+  manage_url?: string
+}
+
+export function listLibraryBranches(): Promise<LibraryBranch[]> {
+  return request("/api/academic/rooms/branches")
+}
+
+export function searchLibraryRooms(opts?: {
+  branch?: string
+  target_date?: string
+}): Promise<RoomSearchResult> {
+  const params = new URLSearchParams()
+  if (opts?.branch) params.set("branch", opts.branch)
+  if (opts?.target_date) params.set("target_date", opts.target_date)
+  const qs = params.toString()
+  return request(`/api/academic/rooms${qs ? `?${qs}` : ""}`)
+}
+
+export function bookLibraryRoom(opts: {
+  branch: string
+  room_name: string
+  date_day: string
+  start_time: string
+  end_time: string
+  num_persons?: number
+}): Promise<RoomBookingResult> {
+  return request("/api/academic/rooms/book", {
+    method: "POST",
+    body: JSON.stringify({
+      branch: opts.branch,
+      room_name: opts.room_name,
+      date_day: opts.date_day,
+      start_time: opts.start_time,
+      end_time: opts.end_time,
+      num_persons: opts.num_persons ?? 3,
+    }),
+  })
 }
 
 // --- Agent Activity ---

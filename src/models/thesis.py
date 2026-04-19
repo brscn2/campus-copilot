@@ -17,3 +17,4 @@ class ThesisOpportunity(BaseModel):
     match_score: float = 0.0
     reasoning: str = ""
     tags: list[str] = []
+    source_url: str = ""
