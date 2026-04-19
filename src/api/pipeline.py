@@ -124,6 +124,7 @@ class SyncedCoursesResponse(BaseModel):
 
 _CODE_RE = re.compile(r"[_( ]\s*((?:IN|MA|CIT|CITHN)\d{3,6})\s*[_) ]?", re.IGNORECASE)
 _SEM_RE = re.compile(r"((?:SoSe|WiSe|sose|wise)[_ ]*\d{4}(?:[_/ ]\d{2,4})?)", re.IGNORECASE)
+_TRUNCATED_SEM_RE = re.compile(r"[_\s](wi(?:se)?|so(?:se)?)$", re.IGNORECASE)
 _FACULTY_RE = re.compile(
     r"\s*[_\-]\s*(?:Computation|Studentische|TUM Global|Alumni Office).*",
     re.IGNORECASE,
@@ -152,6 +153,7 @@ def _parse_download_folder(raw_name: str) -> tuple[str, str, str]:
     while _CODE_RE.search(name):
         name = _CODE_RE.sub(" ", name, count=1)
     name = _SEM_RE.sub("", name)
+    name = _TRUNCATED_SEM_RE.sub("", name)
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"\s{2,}", " ", name).strip(" .,_-")
     name = name.title() if name == name.lower() else name

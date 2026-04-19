@@ -10,12 +10,19 @@ import { MasteryChart } from "@/components/mastery-chart"
 import { useChat } from "@/components/chat-context"
 import {
   agentActivity as mockAgentActivity,
-  deadlines,
-  todayEvents,
-  user,
+  deadlines as mockDeadlines,
+  todayEvents as mockTodayEvents,
 } from "@/lib/mock-data"
 import type { AgentType } from "@/lib/mock-data"
-import { listActivity } from "@/lib/api"
+import {
+  listActivity,
+  listDeadlines,
+  listCalendarEvents,
+  getStudentProfile,
+  type Deadline,
+  type CalendarEventData,
+  type StudentProfile,
+} from "@/lib/api"
 import {
   ArrowRight,
   BookOpen,
@@ -51,6 +58,14 @@ interface ActivityEntry {
   agent: AgentType
 }
 
+interface TodayEvent {
+  id: string | number
+  time: string
+  title: string
+  location: string
+  agent: AgentType
+}
+
 function formatRelativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60_000)
@@ -63,11 +78,66 @@ function formatRelativeTime(dateStr: string): string {
   return `${days}d ago`
 }
 
+function calendarEventsToToday(events: CalendarEventData[]): TodayEvent[] {
+  const now = new Date()
+  const todayDay = (now.getDay() + 6) % 7
+  return events
+    .filter((e) => e.day === todayDay)
+    .sort((a, b) => a.start - b.start)
+    .slice(0, 3)
+    .map((e) => {
+      const sh = Math.floor(e.start)
+      const sm = Math.round((e.start % 1) * 60)
+      const eh = Math.floor(e.end)
+      const em = Math.round((e.end % 1) * 60)
+      const pad = (n: number) => String(n).padStart(2, "0")
+      return {
+        id: e.id,
+        time: `${pad(sh)}:${pad(sm)} – ${pad(eh)}:${pad(em)}`,
+        title: e.title,
+        location: e.location || "",
+        agent: (e.agent || "academic") as AgentType,
+      }
+    })
+}
+
 export default function DashboardPage() {
   const { openWithPrompt } = useChat()
+
+  const [profile, setProfile] = useState<{ name: string; program: string } | null>(null)
+  const [deadlinesList, setDeadlinesList] = useState<Deadline[] | null>(null)
+  const [todayEvts, setTodayEvts] = useState<TodayEvent[] | null>(null)
   const [activities, setActivities] = useState<ActivityEntry[]>(
     mockAgentActivity.map((a) => ({ ...a, agent: a.agent as AgentType })),
   )
+
+  const fetchProfile = useCallback(async () => {
+    try {
+      const p = await getStudentProfile()
+      setProfile({ name: p.name, program: `${p.degree} ${p.program}` })
+    } catch {
+      // keep null — template will use fallback
+    }
+  }, [])
+
+  const fetchDeadlines = useCallback(async () => {
+    try {
+      const items = await listDeadlines()
+      setDeadlinesList(items)
+    } catch {
+      // null means not loaded — will show mock fallback below
+    }
+  }, [])
+
+  const fetchTodayEvents = useCallback(async () => {
+    try {
+      const { events } = await listCalendarEvents(0)
+      const today = calendarEventsToToday(events)
+      setTodayEvts(today)
+    } catch {
+      // null means not loaded — will show mock fallback
+    }
+  }, [])
 
   const fetchActivities = useCallback(async () => {
     try {
@@ -89,22 +159,37 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
+    fetchProfile()
+    fetchDeadlines()
+    fetchTodayEvents()
     fetchActivities()
     const interval = setInterval(fetchActivities, 30_000)
     return () => clearInterval(interval)
-  }, [fetchActivities])
+  }, [fetchProfile, fetchDeadlines, fetchTodayEvents, fetchActivities])
 
-  const sortedDeadlines = [...deadlines].sort((a, b) => b.priority - a.priority).slice(0, 5)
+  const displayName = profile?.name?.split(" ")[0] ?? "Alex"
+  const displayProgram = profile?.program ?? ""
+
+  const deadlinesSource = deadlinesList ?? mockDeadlines
+  const deadlinesToShow = [...deadlinesSource].sort((a, b) => b.priority - a.priority).slice(0, 5)
+  const deadlinesAreReal = deadlinesList !== null
+
+  const todaySource = todayEvts ?? mockTodayEvents.map((e) => ({
+    ...e, agent: e.agent as AgentType,
+  }))
+  const todayIsReal = todayEvts !== null
 
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-[28px]">
-            Welcome back, {user.name.split(" ")[0]}
+            Welcome back, {displayName}
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground text-pretty">
-            Your agents coordinated 6 autonomous actions today. Here&apos;s what&apos;s happening.
+            {displayProgram
+              ? `${displayProgram} · Your agents are monitoring Moodle, Calendar & TUMonline.`
+              : "Your agents coordinated 6 autonomous actions today. Here\u0027s what\u0027s happening."}
           </p>
         </div>
         <WeekOptimized percent={73} />
@@ -140,7 +225,13 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="text-base">Today</CardTitle>
-              <CardDescription>Next 3 events across all agents</CardDescription>
+              <CardDescription>
+                {todayIsReal
+                  ? todaySource.length > 0
+                    ? `${todaySource.length} event${todaySource.length !== 1 ? "s" : ""} from Google Calendar`
+                    : "No events today · Google Calendar synced"
+                  : "Loading from Google Calendar…"}
+              </CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/calendar">
@@ -149,27 +240,33 @@ export default function DashboardPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2">
-              {todayEvents.map((e) => (
-                <li
-                  key={e.id}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg border border-border border-l-4 bg-card p-3",
-                    agentBorder(e.agent),
-                  )}
-                >
-                  <div className="flex min-w-[92px] items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5" />
-                    {e.time}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{e.title}</div>
-                    <div className="truncate text-xs text-muted-foreground">{e.location}</div>
-                  </div>
-                  <AgentBadge agent={e.agent} />
-                </li>
-              ))}
-            </ul>
+            {todaySource.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No events scheduled for today.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {todaySource.map((e) => (
+                  <li
+                    key={e.id}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg border border-border border-l-4 bg-card p-3",
+                      agentBorder(e.agent),
+                    )}
+                  >
+                    <div className="flex min-w-[92px] items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      {e.time}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{e.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">{e.location}</div>
+                    </div>
+                    <AgentBadge agent={e.agent} />
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
@@ -204,7 +301,11 @@ export default function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="text-base">Deadline queue</CardTitle>
-              <CardDescription>Top 5 by priority · Moodle + TUMonline</CardDescription>
+              <CardDescription>
+                {deadlinesAreReal
+                  ? `${deadlinesSource.length} from Moodle · sorted by priority`
+                  : "Loading from Moodle…"}
+              </CardDescription>
             </div>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/academic">
@@ -214,7 +315,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col divide-y divide-border">
-              {sortedDeadlines.map((d) => (
+              {deadlinesToShow.map((d) => (
                 <li key={d.id} className="flex items-center gap-4 py-3 first:pt-0 last:pb-0">
                   <div className="w-16 shrink-0 font-mono text-xs font-medium text-primary">{d.course}</div>
                   <div className="min-w-0 flex-1">

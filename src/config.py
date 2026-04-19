@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Force .env values to override any shell env vars (e.g. stale AWS creds).
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 DEMO_STUDENT_ID = "00000000-0000-0000-0000-000000000001"
 

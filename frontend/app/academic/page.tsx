@@ -2040,9 +2040,15 @@ function StudyRoomTab() {
               <div className="py-8 text-center text-sm text-muted-foreground">
                 No rooms available for this date/time. Try a different day.
               </div>
-              <Button
-                className="gap-1.5 sm:self-center"
-                onClick={() => successToast(`${r.name} booked for 14:00 – 17:00`)}
+            )}
+            {data.rooms.map((r) => (
+              <Card
+                key={r.name}
+                className={cn(
+                  "cursor-pointer transition-colors",
+                  r.name === selectedRoom && "ring-2 ring-primary",
+                )}
+                onClick={() => setSelectedRoom(r.name)}
               >
                 <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-start gap-3">
