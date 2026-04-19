@@ -690,5 +690,3 @@ async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:
     finally:
         await context.close()
         await pw.stop()
-
-

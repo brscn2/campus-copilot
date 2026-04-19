@@ -13,7 +13,12 @@ from src.integrations.tumonline import get_grades, get_identity, get_lectures
 from src.lib.bedrock import get_haiku_model_id, get_sonnet_model_id, invoke_model
 from src.lib.job_matching import match_jobs_via_cognee
 from src.lib.logging import get_logger
-from src.lib.skill_inference import infer_skills, is_noise_lecture
+from src.lib.skill_inference import (
+    DEFAULT_SEARCH_KEYWORDS,
+    derive_search_keywords,
+    infer_skills,
+    is_noise_lecture,
+)
 
 logger = get_logger(__name__)
 
@@ -134,16 +139,7 @@ async def list_jobs(
 async def list_matched_jobs(
     kind: str = "working_student",
 ) -> list[dict[str, Any]]:
-    """Fetch jobs from SerpAPI, ingest into Cognee, and match against student profile."""
-    try:
-        jobs = await search_jobs(kind=kind)
-    except Exception:
-        logger.warning("matched_jobs_search_failed", exc_info=True)
-        jobs = []
-
-    if not jobs:
-        return []
-
+    """Fetch profile-relevant jobs from TheirStack and score against student profile."""
     try:
         identity = await get_identity()
         grades = await get_grades()
@@ -155,6 +151,20 @@ async def list_matched_jobs(
         grades = []
         lectures = []
         skills = []
+
+    program = grades[0].get("program", "") if grades else ""
+    keywords = (
+        derive_search_keywords(skills, program=program) if skills else list(DEFAULT_SEARCH_KEYWORDS)
+    )
+
+    try:
+        jobs = await search_jobs(kind=kind, keywords=keywords)
+    except Exception:
+        logger.warning("matched_jobs_search_failed", exc_info=True)
+        jobs = []
+
+    if not jobs:
+        return []
 
     matched = await match_jobs_via_cognee(
         jobs=jobs,
@@ -198,7 +208,9 @@ def _build_profile_context(
         lines.append(f"Program: {grades[0].get('program', '')} ({grades[0].get('degree', '')})")
         lines.append("\nCompleted courses:")
         for g in grades:
-            lines.append(f"  {g['course_code']} — {g['title']} — Grade: {g['grade']} — {g['credits']} ECTS")
+            lines.append(
+                f"  {g['course_code']} — {g['title']} — Grade: {g['grade']} — {g['credits']} ECTS"
+            )
 
     if lectures:
         lines.append("\nCurrently enrolled (SS 2026):")
@@ -331,16 +343,20 @@ async def list_events() -> list[dict[str, Any]]:
     profile_summary = f"M.Sc. Informatik student at TUM. Skills: {', '.join(skills)}"
 
     events_text = "\n".join(
-        f"- {e['title']} ({e.get('date', '')}, {e.get('location', '')})"
-        for e in events[:15]
+        f"- {e['title']} ({e.get('date', '')}, {e.get('location', '')})" for e in events[:15]
     )
 
     try:
         result = await invoke_model(
             model_id=get_haiku_model_id(),
-            messages=[{"role": "user", "content": EVENTS_SCORE_PROMPT.format(
-                profile=profile_summary, events=events_text
-            )}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": EVENTS_SCORE_PROMPT.format(
+                        profile=profile_summary, events=events_text
+                    ),
+                }
+            ],
             max_tokens=1500,
             temperature=0.0,
         )
@@ -363,11 +379,13 @@ async def list_events() -> list[dict[str, Any]]:
     scored_events: list[dict[str, Any]] = []
     for e in events[:15]:
         match = score_map.get(e["title"], {})
-        scored_events.append({
-            **e,
-            "fit_score": match.get("score", 50),
-            "reason": match.get("reason", ""),
-        })
+        scored_events.append(
+            {
+                **e,
+                "fit_score": match.get("score", 50),
+                "reason": match.get("reason", ""),
+            }
+        )
 
     scored_events.sort(key=lambda x: x["fit_score"], reverse=True)
     _scored_events_cache = scored_events

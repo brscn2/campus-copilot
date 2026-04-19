@@ -34,7 +34,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
 
   return (
-    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <aside className="flex h-full w-64 flex-col border-r border-sidebar-border bg-sidebar/80 backdrop-blur-xl text-sidebar-foreground">
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Sparkles className="h-5 w-5" />

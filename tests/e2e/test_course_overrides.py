@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from fastapi.testclient import TestClient
 
 
-def _stub_repo(monkeypatch: pytest.MonkeyPatch, store: dict[str, dict[str, dict[str, str]]]) -> None:
+def _stub_repo(
+    monkeypatch: pytest.MonkeyPatch, store: dict[str, dict[str, dict[str, str]]]
+) -> None:
     """Replace the repo with an in-memory dict keyed by student_id."""
 
     async def fake_get(_session: Any, student_id: str) -> dict[str, dict[str, str]]:
@@ -83,9 +85,7 @@ def test_set_then_get_override(client: TestClient, monkeypatch: pytest.MonkeyPat
     assert get.json()["overrides"]["demo_dataset"]["semester"] == "WiSe 2025/26"
 
 
-def test_set_rejects_empty_semester(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_set_rejects_empty_semester(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_session(monkeypatch)
     _stub_repo(monkeypatch, {})
 
@@ -117,9 +117,7 @@ def test_clear_all_overrides(client: TestClient, monkeypatch: pytest.MonkeyPatch
     assert "demo" not in store
 
 
-def test_synced_courses_apply_override(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_synced_courses_apply_override(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """The /synced endpoint must swap in the user's chosen semester."""
     _stub_session(monkeypatch)
     _stub_repo(
@@ -129,8 +127,16 @@ def test_synced_courses_apply_override(
 
     async def fake_list_objects(_prefix: str) -> list[dict[str, Any]]:
         return [
-            {"key": "slides/in2346_intro_to_dl_wise_2024_25/lec01.pdf", "size": 1, "last_modified": "x"},
-            {"key": "slides/in2346_intro_to_dl_wise_2024_25/lec02.pdf", "size": 1, "last_modified": "x"},
+            {
+                "key": "slides/in2346_intro_to_dl_wise_2024_25/lec01.pdf",
+                "size": 1,
+                "last_modified": "x",
+            },
+            {
+                "key": "slides/in2346_intro_to_dl_wise_2024_25/lec02.pdf",
+                "size": 1,
+                "last_modified": "x",
+            },
         ]
 
     monkeypatch.setattr("src.lib.s3.list_objects", fake_list_objects)
@@ -155,7 +161,11 @@ def test_synced_courses_no_override_uses_regex(
 
     async def fake_list_objects(_prefix: str) -> list[dict[str, Any]]:
         return [
-            {"key": "slides/in2346_intro_to_dl_wise_2024_25/lec01.pdf", "size": 1, "last_modified": "x"},
+            {
+                "key": "slides/in2346_intro_to_dl_wise_2024_25/lec01.pdf",
+                "size": 1,
+                "last_modified": "x",
+            },
         ]
 
     monkeypatch.setattr("src.lib.s3.list_objects", fake_list_objects)

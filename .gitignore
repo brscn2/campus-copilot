@@ -42,6 +42,9 @@ htmlcov/
 # Quiz cache
 .quiz_cache/
 
+# Jobs (TheirStack) on-disk cache
+.cache/
+
 # OS
 .DS_Store
 Thumbs.db

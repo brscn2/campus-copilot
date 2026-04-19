@@ -381,21 +381,27 @@ export default function CalendarPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <div className="rounded-lg border border-academic/30 bg-academic-soft/50 p-3 text-sm">
+            <div className="animate-slide-in-left animate-conflict-shake rounded-lg border border-academic/30 bg-academic-soft/50 p-3 text-sm">
               <div className="flex items-center gap-2">
                 <AgentBadge agent="academic" />
                 <span className="font-medium">Study block: IN2086</span>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">Midterm in 7 days · mastery gap 59%</div>
             </div>
-            <div className="rounded-lg border border-social/30 bg-social-soft/40 p-3 text-sm">
+            <div className="relative flex items-center justify-center">
+              <span className="animate-conflict-flash absolute inset-0 rounded-lg bg-destructive/20" />
+              <span className="relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground" style={{ animationDelay: "0.3s" }}>
+                VS
+              </span>
+            </div>
+            <div className="animate-slide-in-right animate-conflict-shake rounded-lg border border-social/30 bg-social-soft/40 p-3 text-sm">
               <div className="flex items-center gap-2">
                 <AgentBadge agent="social" />
                 <span className="font-medium">ESN Welcome Drinks RSVP</span>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">Free reschedule · 3 friends also going</div>
             </div>
-            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+            <div className="animate-resolve-fade-in rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
               <span className="font-medium text-foreground">Orchestrator rationale: </span>
               Your priority list places &ldquo;Exam prep&rdquo; above &ldquo;Social&rdquo;, and the ESN event has 2 other
               slots this week. Kept the study block; rescheduled RSVP to Fri.

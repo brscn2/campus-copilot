@@ -547,8 +547,7 @@ function JobScoutTab() {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <div className="mt-3 text-sm">Searching jobs and matching against your profile...</div>
-          <div className="mt-1 text-xs text-muted-foreground">SerpAPI + Cognee knowledge graph</div>
+          <div className="mt-3 text-sm">Finding jobs relevant to your profile...</div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -558,7 +557,7 @@ function JobScoutTab() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {filtered.map((j, i) => (
-            <Card key={`${j.id}-${i}`} className="transition-all hover:-translate-y-0.5 hover:shadow-sm">
+            <Card key={`${j.id}-${i}`} className="animate-stagger-fade-in transition-all hover:-translate-y-0.5 hover:shadow-sm" style={{ animationDelay: `${i * 60}ms` }}>
               <CardContent className="pt-6">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
@@ -695,7 +694,7 @@ function EventsTab() {
   return (
     <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
       {events.map((e, i) => (
-        <Card key={`${e.url}-${i}`} className="overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-sm">
+        <Card key={`${e.url}-${i}`} className="animate-stagger-fade-in overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-sm" style={{ animationDelay: `${i * 60}ms` }}>
           {e.image && (
             <div className="relative w-full overflow-hidden bg-muted">
               <img

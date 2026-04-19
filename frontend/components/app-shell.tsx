@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { Topbar } from "@/components/topbar"
 import { ChatProvider } from "@/components/chat-context"
 import { ChatDrawer } from "@/components/chat-drawer"
+import { ActivityTicker } from "@/components/activity-ticker"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false)
@@ -25,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onToggleSidebar={() => setMobileNavOpen(true)} />
+          <ActivityTicker />
           <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
         </div>
 

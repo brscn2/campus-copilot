@@ -588,9 +588,7 @@ async def book_weekly_course(
             await save_btn.click()
             await page.wait_for_timeout(2000)
         # Verify we're now on the waitlist
-        rm_btn = page.locator(
-            f'[data-testid="remove-from-waiting-list-course-list-item-0-{idx}"]'
-        )
+        rm_btn = page.locator(f'[data-testid="remove-from-waiting-list-course-list-item-0-{idx}"]')
         if await rm_btn.count():
             return {
                 "status": "joined_waitlist",
