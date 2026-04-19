@@ -10,7 +10,8 @@
       "Read(//home/brscn/.pyenv/versions/3.11.14/lib/python3.11/site-packages/cogwit_sdk/**)",
       "Bash(unset VIRTUAL_ENV)",
       "Bash(/home/brscn/Desktop/campus-copilot/.venv/bin/python -c \"import cognee; print\\(cognee.__file__, cognee.__version__\\)\")",
-      "Bash(/home/brscn/Desktop/campus-copilot/.venv/bin/python -c \"import sys; [print\\(p\\) for p in sys.path if 'pyenv' in p or 'site-packages' in p]\")"
+      "Bash(/home/brscn/Desktop/campus-copilot/.venv/bin/python -c \"import sys; [print\\(p\\) for p in sys.path if 'pyenv' in p or 'site-packages' in p]\")",
+      "WebFetch(domain:api.srv.nat.tum.de)"
     ],
     "additionalDirectories": [
       "/home/brscn/.claude/plans"

@@ -27,6 +27,9 @@ class StudentRow(Base):
 
     tum_email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(255))
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    matriculation_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     program: Mapped[str] = mapped_column(String(255))
     semester: Mapped[int] = mapped_column(Integer)
     priorities: Mapped[dict[str, int]] = mapped_column(JSONB, default=dict)

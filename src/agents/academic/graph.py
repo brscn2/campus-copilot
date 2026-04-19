@@ -26,7 +26,7 @@ from src.agents.academic.tools import (
     search_thesis_opportunities,
     take_quiz,
 )
-from src.agents.base import AgentInput, AgentOutput
+from src.agents.base import AgentInput, AgentOutput, extract_actions_from_messages
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
 from src.lib.message_hygiene import sanitize_tool_messages
@@ -131,9 +131,11 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     last_message = result["messages"][-1]
     response_text: str = last_message.content if isinstance(last_message.content, str) else ""
 
+    actions = extract_actions_from_messages(result["messages"])
+
     return AgentOutput(
         agent="academic",
         message=response_text,
-        actions=[],
+        actions=actions,
         data={},
     )

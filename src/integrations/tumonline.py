@@ -205,6 +205,48 @@ async def _fetch_nat_token() -> str | None:
         return resp.json().get("access_token")
 
 
+async def fetch_nat_student(username: str) -> dict[str, Any]:
+    """Fetch student data from the NAT Student API.
+
+    Args:
+        username: TUM username (7 chars, e.g. 'go93wis').
+
+    Returns:
+        Dict with firstname, lastname, email, matriculation_number, program.
+    """
+    token = await _fetch_nat_token()
+    if not token:
+        raise TUMAuthenticationError("NAT API authentication failed — check TUM credentials")
+
+    url = f"https://api.srv.nat.tum.de/api/v1/students/{username}"
+    logger.info("nat_fetch_student", username=username)
+
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        resp = await client.get(
+            url, headers={"Authorization": f"Bearer {token}", "accept": "application/json"}
+        )
+        if resp.status_code == 404:
+            raise TUMSystemUnavailableError(f"Student '{username}' not found in NAT API")
+        if resp.status_code != 200:
+            raise TUMSystemUnavailableError(
+                f"NAT Student API returned {resp.status_code} for {username}"
+            )
+        data = resp.json()
+
+    program = ""
+    enrolements = data.get("enrolements") or []
+    if enrolements and isinstance(enrolements[0], dict):
+        program = enrolements[0].get("name", "")
+
+    return {
+        "firstname": data.get("firstname", ""),
+        "lastname": data.get("lastname", ""),
+        "email": data.get("email", ""),
+        "matriculation_number": data.get("matrikel", ""),
+        "program": program,
+    }
+
+
 async def get_tuition_status() -> dict[str, Any]:
     """Get tuition fee status."""
     rows = await _fetch("wbservicesbasic.studienbeitragsstatus")

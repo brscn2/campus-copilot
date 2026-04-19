@@ -419,6 +419,40 @@ export function submitFlashcards(
   })
 }
 
+// --- User Profile (Settings) ---
+
+export interface TumStudentData {
+  firstname: string
+  lastname: string
+  email: string
+  matriculation_number: string
+  program: string
+}
+
+export interface ProfileFormData {
+  first_name: string
+  last_name: string
+  email: string
+  program: string
+  semester: number
+  matriculation_number: string
+}
+
+export function fetchTumStudent(username: string): Promise<TumStudentData> {
+  return request(`/api/profile/tum/${encodeURIComponent(username)}`)
+}
+
+export function getProfile(): Promise<ProfileFormData> {
+  return request("/api/profile")
+}
+
+export function saveProfile(data: ProfileFormData): Promise<ProfileFormData> {
+  return request("/api/profile", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  })
+}
+
 // --- Career Profile ---
 
 export interface ProfileSkill {
