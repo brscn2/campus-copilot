@@ -547,8 +547,7 @@ function JobScoutTab() {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <div className="mt-3 text-sm">Searching jobs and matching against your profile...</div>
-          <div className="mt-1 text-xs text-muted-foreground">SerpAPI + Cognee knowledge graph</div>
+          <div className="mt-3 text-sm">Finding jobs relevant to your profile...</div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">

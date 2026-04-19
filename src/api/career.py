@@ -158,7 +158,7 @@ async def list_matched_jobs(
     )
 
     try:
-        jobs = await search_jobs(kind=kind, keywords=keywords, location="Munich")
+        jobs = await search_jobs(kind=kind, keywords=keywords)
     except Exception:
         logger.warning("matched_jobs_search_failed", exc_info=True)
         jobs = []

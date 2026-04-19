@@ -12,6 +12,7 @@ Jobs scrape. See https://api.theirstack.com/en/docs/api-reference/jobs/search_jo
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -484,7 +485,9 @@ async def search_jobs(
     batches = _keyword_batches(keywords)
     all_results: list[dict[str, Any]] = []
 
-    for batch in batches:
+    for i, batch in enumerate(batches):
+        if i > 0:
+            await asyncio.sleep(1.0)
         try:
             batch_results = await _search_theirstack(
                 kind=kind, keywords=batch, company=company, location=location

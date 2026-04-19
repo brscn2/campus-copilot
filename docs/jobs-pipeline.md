@@ -10,10 +10,11 @@
 ## TL;DR
 
 The Career page's **Job Scout** tab calls `GET /api/career/jobs/matched?kind=...`.
-The backend fetches structured listings from **TheirStack** (Google Jobs / SerpAPI was
-removed), enriches them with the student's **TUMonline academic record** (grades +
-current lectures + inferred skills + identity), then ranks them via **Cognee
-GRAPH_COMPLETION** with a **Bedrock Haiku** fallback. Results are cached in two
+The backend fetches structured listings from **TheirStack** (Europe-wide, Google
+Jobs / SerpAPI was removed), enriches them with the student's **TUMonline academic
+record** (grades + current lectures + inferred skills + identity), queries the
+**Cognee knowledge graph** for semantic profile-job connections, then scores them
+via **Bedrock Haiku** enriched with the KG insights. Results are cached in two
 layers (in-memory 10 min + on-disk 24 h) to stay inside TheirStack's 200-credit
 free monthly budget. The uploaded CV is **not** part of the matching input today —
 CV audit is a separate sibling feature.
@@ -38,7 +39,7 @@ flowchart LR
     TS --> MATCH[match_jobs_via_cognee\nsrc/lib/job_matching.py]
     TUM --> MATCH
     SKILL --> MATCH
-    MATCH -->|ingest jobs| COG["Cognee Cloud\ndataset jobs_munich"]
+    MATCH -->|ingest jobs| COG["Cognee Cloud\ndataset jobs_europe"]
     MATCH -->|GRAPH_COMPLETION| COG
     MATCH -->|fallback scorer| HAIKU[Bedrock Haiku 4.5]
 
@@ -66,13 +67,14 @@ flowchart LR
 3. **Match** `src/lib/job_matching.py:match_jobs_via_cognee`:
    - Builds a natural-language profile string ("M.Sc. Informatik student … completed
      courses … currently enrolled … skills …").
-   - `ingest_jobs` POSTs each job's text to Cognee dataset `jobs_munich`,
+   - `ingest_jobs` POSTs each job's text to Cognee dataset `jobs_europe`,
      followed by `cognify`.
-   - Issues a `GRAPH_COMPLETION` query asking "which jobs match best and why?".
-   - Parses the natural-language response, attaches `match_score` + `reasoning`
-     to each job, sorts descending.
-   - On Cognee failure / empty result → `_match_via_haiku`: a single Bedrock
-     Haiku call asks for a JSON `[{index, score, reason}]` array.
+   - `_query_cognee_insights` issues a `GRAPH_COMPLETION` query for semantic
+     profile-job connections (skill overlaps, technology matches, domain fit).
+   - `_match_via_haiku` scores each job via a Bedrock Haiku call, enriched with
+     Cognee KG insights as additional context in the prompt.
+   - On Cognee failure / empty result, the KG insights section is omitted
+     and Haiku scores without it (graceful degradation).
 4. **Response** is the same dict shape `search_jobs` produces, with two extra
    fields: `match_score: float (0-100)` and `reasoning: str`.
 
@@ -88,7 +90,7 @@ Docs: <https://api.theirstack.com/en/docs/api-reference/jobs/search_jobs_v1>
 
 The API requires at least one of `posted_at_max_age_days`, `posted_at_gte/lte`,
 or a company filter. We always send `posted_at_max_age_days=30` and
-`job_country_code_or=["DE"]`.
+`job_country_code_or=EUROPE_COUNTRY_CODES` (18 European countries).
 
 | Our `kind`         | TheirStack filters added                                                                          |
 |--------------------|--------------------------------------------------------------------------------------------------|
@@ -99,9 +101,7 @@ or a company filter. We always send `posted_at_max_age_days=30` and
 Plus:
 - `keywords` → `job_description_contains_or` (server-side word-boundary, case-insensitive).
 - `company` → `company_name_case_insensitive_or=[company]`.
-- `location` containing "munich"/"münchen" → injects `["Munich","München"]` into
-  `job_description_contains_or` *and* post-filters mapped results on `long_location`.
-- `limit` = `settings.theirstack_results_per_call` (default **5**).
+- `limit` = `settings.theirstack_results_per_call` (default **10**).
 - `include_total_results: false` (saves a credit on the count computation).
 
 ### Response mapping (`_map_theirstack_result`)
@@ -160,7 +160,7 @@ Logs to grep:
 ```python
 theirstack_api_key: str = ""
 jobs_mode: Literal["mock", "live"] = "mock"
-theirstack_results_per_call: int = 5
+theirstack_results_per_call: int = 10
 theirstack_cache_dir: str = ".cache/jobs"
 theirstack_cache_ttl_seconds: int = 86400   # 24 h
 ```
@@ -169,7 +169,7 @@ theirstack_cache_ttl_seconds: int = 86400   # 24 h
 `.cache/` is gitignored.
 
 `jobs_mode=mock` (the default) bypasses TheirStack entirely and serves the
-five-item `MOCK_JOBS` list. `jobs_mode=live` requires `theirstack_api_key`;
+five-item `MOCK_JOBS` list (all Munich-based). `jobs_mode=live` requires `theirstack_api_key`;
 missing key logs `theirstack_key_missing` and silently serves mock data.
 
 ---
@@ -180,13 +180,14 @@ missing key logs `theirstack_key_missing` and silently serves mock data.
 |----------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
 | [`src/integrations/jobs.py`](../src/integrations/jobs.py)                                    | TheirStack client, mock fallback, two-layer cache, `search_jobs` public surface       |
 | [`src/api/career.py`](../src/api/career.py)                                                  | `/api/career/jobs`, `/api/career/jobs/matched`, `/api/career/cv/audit`, `/events`     |
-| [`src/lib/job_matching.py`](../src/lib/job_matching.py)                                      | Cognee ingestion + `GRAPH_COMPLETION` query + Haiku fallback scorer                  |
+| [`src/lib/job_matching.py`](../src/lib/job_matching.py)                                      | Cognee ingestion + KG query + Haiku scorer enriched with KG insights                 |
 | [`src/lib/skill_inference.py`](../src/lib/skill_inference.py)                                | Derives ranked skills from TUMonline grades + lectures                                |
 | [`src/integrations/tumonline.py`](../src/integrations/tumonline.py)                          | `get_identity / get_grades / get_lectures` — source of truth for the academic profile |
 | [`src/agents/career/tools.py`](../src/agents/career/tools.py)                                | `@tool search_jobs(...)` exposed to the Career LangGraph agent                        |
 | [`src/models/job.py`](../src/models/job.py)                                                  | Pydantic `Job` model (frozen value object)                                            |
-| [`scripts/warmup_jobs.py`](../scripts/warmup_jobs.py)                                        | One-shot 3-call cache primer for the Informatics + ML/AI + Munich persona             |
-| [`tests/unit/test_jobs.py`](../tests/unit/test_jobs.py)                                      | 30 unit tests covering payload, mapping, mock, routing, caching                       |
+| [`scripts/warmup_jobs.py`](../scripts/warmup_jobs.py)                                        | Batched cache primer for the Informatics persona (Europe-wide)                        |
+| [`tests/unit/test_jobs.py`](../tests/unit/test_jobs.py)                                      | Unit tests covering payload, mapping, mock, routing, caching                          |
+| [`tests/unit/test_job_matching.py`](../tests/unit/test_job_matching.py)                      | Unit tests for Cognee KG insights + Haiku scoring pipeline                            |
 | [`frontend/app/career/page.tsx`](../frontend/app/career/page.tsx)                            | Job Scout tab UI                                                                      |
 | [`frontend/lib/api.ts`](../frontend/lib/api.ts)                                              | `listMatchedJobs(kind)`, `getStudentProfile()`, `uploadCvForAudit(file)`              |
 
@@ -221,14 +222,14 @@ print(f'count={len(rows)}'); print(json.dumps(rows[:2], indent=2, ensure_ascii=F
 "
 ```
 
-### Warm the cache for a free 24 h of UI traffic (~15 credits)
+### Warm the cache for a free 24 h of UI traffic (~90 credits)
 
 ```bash
 JOBS_MODE=live uv run python scripts/warmup_jobs.py
 ```
 
-Three TheirStack calls — one per kind — for the Informatics ML/AI Munich
-persona. Subsequent UI/agent traffic hits `layer=disk` cache hits.
+Multiple batched TheirStack calls per kind for the Informatics persona
+(Europe-wide). Subsequent UI/agent traffic hits `layer=disk` cache hits.
 
 ### Force a cache-free UI session
 
@@ -258,18 +259,18 @@ Either:
 Free plan: **200 API + 50 company credits / month**, **1 credit per job
 returned**, **max 25 results / page**, **2 req/s**.
 
-With current defaults (`THEIRSTACK_RESULTS_PER_CALL=5`):
+With current defaults (`THEIRSTACK_RESULTS_PER_CALL=10`, 3 keyword batches):
 
-| Action                                           | Credits       |
-|--------------------------------------------------|---------------|
-| One full warm-up run (3 kinds × 5 results)       | up to **15**  |
-| Repeat warm-up within 24 h                       | **0** (disk cache) |
-| Job Scout tab open after warm-up                 | **0**         |
-| Switching `kind` after warm-up                   | **0**         |
-| `_search_theirstack` direct one-shot             | up to 5       |
-| One run of `tests/unit/test_jobs.py`             | **0** (mocked) |
+| Action                                                | Credits       |
+|-------------------------------------------------------|---------------|
+| One full warm-up run (3 kinds × 3 batches × 10)       | up to **90**  |
+| Repeat warm-up within 24 h                            | **0** (disk cache) |
+| Job Scout tab open after warm-up                      | **0**         |
+| Switching `kind` after warm-up                        | **0**         |
+| `_search_theirstack` direct one-shot                  | up to 10      |
+| One run of `tests/unit/test_jobs.py`                  | **0** (mocked) |
 
-→ ~13 cold warm-up runs/month available on the free tier.
+→ ~2 cold warm-up runs/month available on the free tier.
 
 ---
 
@@ -283,10 +284,6 @@ With current defaults (`THEIRSTACK_RESULTS_PER_CALL=5`):
 - **Pagination is hard-capped at one page.** `_build_theirstack_payload` always
   sends `page=0`. The free plan allows up to 5 pages × 25 results. Bumping is
   trivial but credits scale linearly.
-- **Munich filter is fuzzy.** TheirStack has no city-level filter, so we use a
-  description-substring trick + post-filter on `long_location`. False negatives
-  for jobs that don't mention "Munich" in the description body but are tagged
-  to Munich elsewhere are possible.
 - **No `nocache` toggle.** Disabling the in-memory cache requires a uvicorn
   restart today. A `theirstack_disable_cache: bool` setting would be ~3 lines.
 - **Cognee match_cache is per-process.** `_match_cache` in `job_matching.py` is

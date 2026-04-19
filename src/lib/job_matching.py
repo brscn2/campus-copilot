@@ -1,11 +1,12 @@
-"""Job matching via Haiku LLM scoring with Cognee knowledge graph ingestion.
+"""Job matching via Cognee knowledge graph + Haiku LLM scoring.
 
 Pipeline:
 1. Fetch jobs from TheirStack (via search_jobs)
-2. Ingest job descriptions into Cognee dataset "jobs_munich" (for knowledge graph)
+2. Ingest job descriptions into Cognee dataset "jobs_europe" (knowledge graph)
 3. Build a rich student profile query (courses, grades, skills with proficiency)
-4. Score jobs against profile via Haiku LLM
-5. Cache scored results in memory (10 min) + disk (4 h)
+4. Query Cognee graph for semantic profile-job connections
+5. Score jobs against profile via Haiku LLM, enriched with KG insights
+6. Cache scored results in memory (10 min) + disk (4 h)
 """
 
 from __future__ import annotations
@@ -19,11 +20,12 @@ from typing import Any
 import httpx
 
 from src.config import get_settings
+from src.lib.cognee_init import ensure_cognee
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
-JOBS_DATASET = "jobs_munich"
+JOBS_DATASET = "jobs_europe"
 
 # (kind) -> (expires_at_monotonic, scored_results)
 _match_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
@@ -41,8 +43,9 @@ HAIKU_MATCH_PROMPT = (
     "IMPORTANT: Vary your scores. No two jobs should receive the same score "
     "unless truly identical in fit. Spread scores across a 30-point range.\n\n"
     "## Student Profile\n{profile}\n\n"
+    "{kg_insights}"
     "## Jobs\n{jobs_text}\n\n"
-    'Return ONLY a JSON array. Each element: '
+    "Return ONLY a JSON array. Each element: "
     '{{"index": <int>, "score": <int 10-95>, '
     '"reason": "<one sentence explaining the match>"}}'
 )
@@ -117,6 +120,63 @@ async def ingest_jobs(jobs: list[dict[str, Any]]) -> int:
 
     logger.info("job_ingest_complete", ingested=ingested, total=len(jobs))
     return ingested
+
+
+async def _query_cognee_insights(profile: str) -> str:
+    """Query Cognee knowledge graph for semantic job-profile connections.
+
+    Uses GRAPH_COMPLETION to find ontological links between the student's
+    skills/courses and ingested job descriptions. Returns a text summary
+    suitable for inclusion in the Haiku scoring prompt.
+
+    Best-effort: returns empty string on any failure.
+    """
+    await ensure_cognee()
+    import cognee
+
+    query = (
+        "Given this student profile, what are the strongest semantic "
+        "connections to the available jobs? Focus on skill-to-requirement "
+        "matches, technology overlaps, and domain fit.\n\n"
+        f"Student: {profile}"
+    )
+
+    try:
+        results = await cognee.recall(
+            query_text=query,
+            query_type=cognee.SearchType.GRAPH_COMPLETION,
+            datasets=[JOBS_DATASET],
+        )
+    except Exception:
+        logger.warning("cognee_job_insights_failed", exc_info=True)
+        return ""
+
+    texts: list[str] = []
+    for r in results:
+        if isinstance(r, dict):
+            text = str(r.get("search_result", r.get("answer", r)))
+        elif hasattr(r, "search_result"):
+            text = str(r.search_result)
+        else:
+            text = str(r)
+        if len(text) > 10:
+            texts.append(text)
+
+    combined = "\n".join(texts)[:2000]
+    logger.info("cognee_job_insights_ok", length=len(combined))
+    return combined
+
+
+def _format_kg_section(insights: str) -> str:
+    """Format Cognee insights as a prompt section, or empty string if none."""
+    if not insights or not insights.strip():
+        return ""
+    return (
+        "## Knowledge Graph Insights\n"
+        "The following semantic connections were identified between "
+        "the student's background and available positions:\n"
+        f"{insights}\n\n"
+    )
 
 
 def _build_profile_query(
@@ -198,6 +258,7 @@ def _disk_match_write(
 async def _match_via_haiku(
     jobs: list[dict[str, Any]],
     profile: str,
+    kg_insights: str = "",
 ) -> list[dict[str, Any]]:
     """Score jobs against student profile using Haiku LLM."""
     from src.lib.bedrock import get_haiku_model_id, invoke_model
@@ -206,16 +267,20 @@ async def _match_via_haiku(
         f"[{i}] {j.get('title', '')} at {j.get('company', '')} ({j.get('kind', '')})\n"
         f"    Location: {j.get('location', '')}\n"
         f"    Description: {j.get('description', '')[:500]}"
-        for i, j in enumerate(jobs[:15])
+        for i, j in enumerate(jobs[:20])
     )
 
-    prompt = HAIKU_MATCH_PROMPT.format(profile=profile, jobs_text=jobs_text)
+    prompt = HAIKU_MATCH_PROMPT.format(
+        profile=profile,
+        kg_insights=_format_kg_section(kg_insights),
+        jobs_text=jobs_text,
+    )
 
     try:
         result = await invoke_model(
             model_id=get_haiku_model_id(),
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2000,
+            max_tokens=2500,
             temperature=0.1,
         )
         text = result.get("content", [{}])[0].get("text", "[]")
@@ -232,7 +297,7 @@ async def _match_via_haiku(
             score_map[s["index"]] = s
 
     scored: list[dict[str, Any]] = []
-    for i, job in enumerate(jobs[:15]):
+    for i, job in enumerate(jobs[:20]):
         match = score_map.get(i, {})
         scored.append(
             {
@@ -254,13 +319,14 @@ async def match_jobs_via_cognee(
     identity: dict[str, Any],
     kind: str = "working_student",
 ) -> list[dict[str, Any]]:
-    """Match jobs to student profile using Haiku LLM scoring.
+    """Match jobs to student profile using Cognee KG insights + Haiku LLM scoring.
 
     1. Check memory + disk cache
     2. Build student profile
-    3. Ingest jobs into Cognee (for knowledge graph, not scoring)
-    4. Score via Haiku LLM
-    5. Cache results in memory + disk
+    3. Ingest jobs into Cognee knowledge graph
+    4. Query Cognee for semantic profile-job connections
+    5. Score via Haiku LLM enriched with KG insights
+    6. Cache results in memory + disk
     """
     settings = get_settings()
     cache_key = _build_match_cache_key(kind, skills, grades)
@@ -286,8 +352,19 @@ async def match_jobs_via_cognee(
     except Exception:
         logger.warning("job_ingest_best_effort_failed", exc_info=True)
 
-    logger.info("job_match_scoring_start", kind=kind, job_count=len(jobs))
-    matched = await _match_via_haiku(jobs, profile_query)
+    kg_insights = ""
+    try:
+        kg_insights = await _query_cognee_insights(profile_query)
+    except Exception:
+        logger.warning("cognee_insights_best_effort_failed", exc_info=True)
+
+    logger.info(
+        "job_match_scoring_start",
+        kind=kind,
+        job_count=len(jobs),
+        has_kg_insights=bool(kg_insights),
+    )
+    matched = await _match_via_haiku(jobs, profile_query, kg_insights=kg_insights)
 
     _match_cache[cache_key] = (now + MATCH_MEMORY_TTL_SECONDS, matched)
     _disk_match_write(cache_key, settings.match_cache_dir, matched)
