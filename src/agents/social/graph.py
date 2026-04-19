@@ -17,6 +17,7 @@ from src.agents.social.tools import (
     get_event_details,
     get_mensa_menu,
     get_zhs_course_schedule,
+    open_event_registration,
     search_events,
     search_zhs_courses,
 )
@@ -32,6 +33,7 @@ TOOLS = [
     book_zhs,
     search_events,
     get_event_details,
+    open_event_registration,
     get_mensa_menu,
 ]
 
