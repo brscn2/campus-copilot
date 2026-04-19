@@ -20,13 +20,15 @@ from src.agents.academic.tools import (
     get_professor_contact,
     get_progress,
     list_course_uploads,
+    list_library_branches,
     list_moodle_courses,
     search_lectures,
     search_rooms,
     search_thesis_opportunities,
     take_quiz,
+    verify_library_booking,
 )
-from src.agents.base import AgentInput, AgentOutput
+from src.agents.base import AgentInput, AgentOutput, extract_actions_from_messages
 from src.lib.bedrock import get_chat_model
 from src.lib.logging import get_logger
 from src.lib.message_hygiene import sanitize_tool_messages
@@ -34,8 +36,10 @@ from src.lib.message_hygiene import sanitize_tool_messages
 logger = get_logger(__name__)
 
 TOOLS = [
+    list_library_branches,
     search_rooms,
     book_room,
+    verify_library_booking,
     search_lectures,
     get_progress,
     take_quiz,
@@ -131,9 +135,11 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     last_message = result["messages"][-1]
     response_text: str = last_message.content if isinstance(last_message.content, str) else ""
 
+    actions = extract_actions_from_messages(result["messages"])
+
     return AgentOutput(
         agent="academic",
         message=response_text,
-        actions=[],
+        actions=actions,
         data={},
     )

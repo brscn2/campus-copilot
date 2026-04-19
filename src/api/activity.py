@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import datetime
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -11,9 +11,6 @@ from sqlalchemy import select
 from src.config import DEMO_STUDENT_ID
 from src.storage.db import get_db_session
 from src.storage.schema import AgentActivityRow
-
-if TYPE_CHECKING:
-    from datetime import datetime
 
 router = APIRouter(tags=["activity"])
 

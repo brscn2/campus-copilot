@@ -1,14 +1,14 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { PageHeader } from "@/components/page-header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { user } from "@/lib/mock-data"
-import { Check } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
+import { fetchTumStudent, getProfile, saveProfile, type ProfileFormData } from "@/lib/api"
 
 const connections = [
   { name: "TUMonline", status: "connected", desc: "Grades, exams, enrolment" },
@@ -26,7 +26,71 @@ const autonomy = [
   { key: "auto-reschedule", label: "Auto-resolve calendar conflicts", desc: "Apply priority rules silently", on: true },
 ]
 
+const EMPTY_FORM: ProfileFormData = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  program: "",
+  semester: 1,
+  matriculation_number: "",
+}
+
 export default function SettingsPage() {
+  const [tumUsername, setTumUsername] = useState("")
+  const [form, setForm] = useState<ProfileFormData>(EMPTY_FORM)
+  const [fetching, setFetching] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [fetchError, setFetchError] = useState("")
+  const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">("idle")
+
+  useEffect(() => {
+    getProfile()
+      .then(setForm)
+      .catch(() => {})
+  }, [])
+
+  async function handleFetchTum() {
+    if (!tumUsername.match(/^[a-z]{2}[0-9]{2}[a-z]{3}$/)) {
+      setFetchError("Username must be 7 characters (e.g. go93wis)")
+      return
+    }
+    setFetching(true)
+    setFetchError("")
+    try {
+      const data = await fetchTumStudent(tumUsername)
+      setForm((prev) => ({
+        ...prev,
+        first_name: data.firstname,
+        last_name: data.lastname,
+        email: data.email,
+        matriculation_number: data.matriculation_number,
+        program: data.program || prev.program,
+      }))
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : "Failed to fetch from TUMonline")
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setSaveStatus("idle")
+    try {
+      await saveProfile(form)
+      setSaveStatus("success")
+      setTimeout(() => setSaveStatus("idle"), 2000)
+    } catch {
+      setSaveStatus("error")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function updateField(field: keyof ProfileFormData, value: string | number) {
+    setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
   return (
     <div>
       <PageHeader title="Settings" description="Profile, connections, and agent autonomy." />
@@ -35,33 +99,108 @@ export default function SettingsPage() {
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-base">Profile</CardTitle>
-            <CardDescription>Pulled from TUMonline</CardDescription>
+            <CardDescription>Auto-fill from TUMonline or enter manually</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-3">
-              <Avatar className="h-14 w-14">
-                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
-                  {user.initials}
-                </AvatarFallback>
-              </Avatar>
+            <div className="space-y-3">
               <div>
-                <div className="font-medium">{user.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {user.program} — {user.semester}
+                <Label htmlFor="tum-username" className="text-xs">TUM Username</Label>
+                <div className="mt-1 flex gap-2">
+                  <Input
+                    id="tum-username"
+                    placeholder="go93wis"
+                    maxLength={7}
+                    value={tumUsername}
+                    onChange={(e) => setTumUsername(e.target.value.toLowerCase())}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={fetching || tumUsername.length !== 7}
+                    onClick={handleFetchTum}
+                  >
+                    {fetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
+                  </Button>
+                </div>
+                {fetchError && (
+                  <p className="mt-1 text-xs text-destructive">{fetchError}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="first-name" className="text-xs">First name</Label>
+                  <Input
+                    id="first-name"
+                    value={form.first_name}
+                    onChange={(e) => updateField("first_name", e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="last-name" className="text-xs">Last name</Label>
+                  <Input
+                    id="last-name"
+                    value={form.last_name}
+                    onChange={(e) => updateField("last_name", e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="email" className="text-xs">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => updateField("email", e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="program" className="text-xs">Program</Label>
+                <Input
+                  id="program"
+                  value={form.program}
+                  onChange={(e) => updateField("program", e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="semester" className="text-xs">Semester</Label>
+                  <Input
+                    id="semester"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={form.semester}
+                    onChange={(e) => updateField("semester", parseInt(e.target.value, 10) || 1)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="matrikel" className="text-xs">Matriculation</Label>
+                  <Input
+                    id="matrikel"
+                    value={form.matriculation_number}
+                    onChange={(e) => updateField("matriculation_number", e.target.value)}
+                    className="mt-1"
+                  />
                 </div>
               </div>
             </div>
-            <div className="mt-4 space-y-3">
-              <div>
-                <Label htmlFor="email" className="text-xs">Email</Label>
-                <Input id="email" defaultValue={user.email} className="mt-1" />
-              </div>
-              <div>
-                <Label htmlFor="matrikel" className="text-xs">Matriculation</Label>
-                <Input id="matrikel" defaultValue="03712845" className="mt-1" />
-              </div>
-            </div>
-            <Button className="mt-4 w-full">Save profile</Button>
+            <Button className="mt-4 w-full" disabled={saving} onClick={handleSave}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : saveStatus === "success" ? (
+                <Check className="mr-2 h-4 w-4" />
+              ) : null}
+              {saveStatus === "success" ? "Saved" : "Save profile"}
+            </Button>
+            {saveStatus === "error" && (
+              <p className="mt-2 text-center text-xs text-destructive">Failed to save profile</p>
+            )}
           </CardContent>
         </Card>
 

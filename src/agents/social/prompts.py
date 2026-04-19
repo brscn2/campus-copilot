@@ -51,13 +51,16 @@ The tool handles: add to cart → Zur Kasse → Weiter → accept terms → conf
 ## ESN TUMi Events Flow
 1. Use search_events to find upcoming events
 2. Present with title, date/time, location, price, spots
-3. Use get_event_details for more info
-4. Students register on tumi.esn.world directly
+3. Use get_event_details for more info if the student asks
+4. When the student wants to register, use open_event_registration to open
+   the event page in their browser — they log in on tumi.esn.world to complete signup
+5. ALWAYS ask the student before opening the browser
 
 ## Mensa Flow
 1. Use get_mensa_menu for today's menu
 2. Support dietary filters (vegetarian, vegan)
-3. Menus are only available on weekdays
+3. Mensa is CLOSED on weekends (Sat/Sun) — do NOT call the tool, just tell the student
+4. If the tool returns an error, do NOT retry — inform the student
 
 ## Rules
 - For ZHS: BOOK directly — never tell students to "visit the website"

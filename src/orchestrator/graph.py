@@ -86,16 +86,16 @@ async def run_orchestrator(
     )
     result: AgentOutput = await runner(agent_input)
 
-    summary = result.message[:120] if result.message else "Processed request"
-    try:
-        await log_activity(
-            student_id=student_id,
-            agent=agent_name,
-            text=summary,
-            metadata={"session_id": session_id, "query": query[:200]},
-        )
-    except Exception:
-        logger.warning("activity_log_failed", exc_info=True)
+    for action in result.actions:
+        try:
+            await log_activity(
+                student_id=student_id,
+                agent=agent_name,
+                text=action.description[:120],
+                metadata={"session_id": session_id, "action_type": action.action_type},
+            )
+        except Exception:
+            logger.warning("activity_log_failed", exc_info=True)
 
     await session_store.append(
         session_id,

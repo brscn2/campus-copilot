@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 
-from src.agents.base import AgentInput, AgentOutput
+from src.agents.base import AgentInput, AgentOutput, extract_actions_from_messages
 from src.agents.career.prompts import CAREER_SYSTEM
 from src.agents.career.state import CareerState
 from src.agents.career.tools import audit_cv, get_student_profile, search_jobs
@@ -95,9 +95,11 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     last_message = result["messages"][-1]
     response_text: str = last_message.content if isinstance(last_message.content, str) else ""
 
+    actions = extract_actions_from_messages(result["messages"])
+
     return AgentOutput(
         agent="career",
         message=response_text,
-        actions=[],
+        actions=actions,
         data={},
     )

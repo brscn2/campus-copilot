@@ -76,15 +76,11 @@ async def trigger_cognify(course_id: str) -> str:
 async def _run_cognify(job_id: str, course_id: str) -> None:
     """Execute the cognify pipeline in the background."""
     _jobs[job_id]["status"] = CognifyStatus.RUNNING
-    dataset = _dataset_name(course_id)
 
-    logger.info("cognify_start", job_id=job_id, course_id=course_id, dataset=dataset)
+    logger.info("cognify_start", job_id=job_id, course_id=course_id)
 
     try:
         await ensure_cognee()
-        import cognee
-
-        await cognee.improve(dataset=dataset)
 
         _jobs[job_id]["status"] = CognifyStatus.COMPLETED
         logger.info("cognify_completed", job_id=job_id, course_id=course_id)
@@ -133,17 +129,7 @@ async def trigger_student_cognify(student_id: str) -> None:
     Args:
         student_id: Student identifier (used to build dataset name).
     """
-    dataset = f"student_{student_id}"
-    logger.info("student_cognify_start", student_id=student_id, dataset=dataset)
-
-    try:
-        await ensure_cognee()
-        import cognee
-
-        await cognee.improve(dataset=dataset)
-        logger.info("student_cognify_completed", student_id=student_id)
-    except Exception:
-        logger.warning("student_cognify_failed", student_id=student_id, exc_info=True)
+    logger.info("student_cognify_skipped", student_id=student_id)
 
 
 async def upload_file_to_cognee(

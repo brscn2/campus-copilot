@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 
-from src.agents.base import AgentInput, AgentOutput
+from src.agents.base import AgentInput, AgentOutput, extract_actions_from_messages
 from src.agents.social.prompts import SOCIAL_SYSTEM
 from src.agents.social.state import SocialState
 from src.agents.social.tools import (
@@ -17,6 +17,7 @@ from src.agents.social.tools import (
     get_event_details,
     get_mensa_menu,
     get_zhs_course_schedule,
+    open_event_registration,
     search_events,
     search_zhs_courses,
 )
@@ -32,6 +33,7 @@ TOOLS = [
     book_zhs,
     search_events,
     get_event_details,
+    open_event_registration,
     get_mensa_menu,
 ]
 
@@ -109,9 +111,11 @@ async def run(agent_input: AgentInput) -> AgentOutput:
     last_message = result["messages"][-1]
     response_text: str = last_message.content if isinstance(last_message.content, str) else ""
 
+    actions = extract_actions_from_messages(result["messages"])
+
     return AgentOutput(
         agent="social",
         message=response_text,
-        actions=[],
+        actions=actions,
         data={},
     )
