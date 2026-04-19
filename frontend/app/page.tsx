@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { AgentBadge, agentBorder } from "@/components/agent-badge"
 import { MasteryChart } from "@/components/mastery-chart"
-import { PageHeader } from "@/components/page-header"
 import { useChat } from "@/components/chat-context"
 import {
   agentActivity as mockAgentActivity,
@@ -99,20 +98,28 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <PageHeader
-        title={`Welcome back, ${user.name.split(" ")[0]}`}
-        description="Your agents coordinated 6 autonomous actions today. Here's what's happening."
-      />
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-balance sm:text-[28px]">
+            Welcome back, {user.name.split(" ")[0]}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground text-pretty">
+            Your agents coordinated 6 autonomous actions today. Here&apos;s what&apos;s happening.
+          </p>
+        </div>
+        <WeekOptimized percent={73} />
+      </div>
 
       {/* Quick actions */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {quickActions.map((a) => {
+        {quickActions.map((a, i) => {
           const Icon = a.icon
           return (
             <button
               key={a.label}
               onClick={() => openWithPrompt(a.prompt)}
-              className="group flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm"
+              style={{ animationDelay: `${i * 60}ms` }}
+              className="animate-stagger-fade-in group flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <Icon className="h-4 w-4" />
@@ -129,7 +136,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Today summary */}
-        <Card className="lg:col-span-2">
+        <Card className="animate-stagger-fade-in lg:col-span-2" style={{ animationDelay: "0ms" }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="text-base">Today</CardTitle>
@@ -167,7 +174,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Agent activity */}
-        <Card>
+        <Card className="animate-stagger-fade-in" style={{ animationDelay: "75ms" }}>
           <CardHeader>
             <CardTitle className="text-base">Agent activity</CardTitle>
             <CardDescription>Recent autonomous actions</CardDescription>
@@ -193,7 +200,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Deadline queue */}
-        <Card className="lg:col-span-2">
+        <Card className="animate-stagger-fade-in lg:col-span-2" style={{ animationDelay: "150ms" }}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="text-base">Deadline queue</CardTitle>
@@ -233,7 +240,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Mastery */}
-        <Card>
+        <Card className="animate-stagger-fade-in" style={{ animationDelay: "225ms" }}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-primary" />
@@ -245,6 +252,62 @@ export default function DashboardPage() {
             <MasteryChart />
           </CardContent>
         </Card>
+      </div>
+    </div>
+  )
+}
+
+function WeekOptimized({ percent }: { percent: number }) {
+  const size = 56
+  const stroke = 5
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (percent / 100) * circumference
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          className="-rotate-90"
+          viewBox={`0 0 ${size} ${size}`}
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            className="text-muted/50"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            className="animate-progress-ring text-primary"
+            style={
+              {
+                strokeDasharray: circumference,
+                "--ring-circumference": circumference,
+                "--ring-offset": offset,
+                strokeDashoffset: offset,
+              } as React.CSSProperties
+            }
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold tabular-nums">
+          {percent}%
+        </span>
+      </div>
+      <div className="text-sm">
+        <div className="font-medium">Week optimized</div>
+        <div className="text-xs text-muted-foreground">Across all 3 agents</div>
       </div>
     </div>
   )

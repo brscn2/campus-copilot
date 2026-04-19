@@ -160,3 +160,75 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes stagger-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes progress-ring {
+  from {
+    stroke-dashoffset: var(--ring-circumference);
+  }
+  to {
+    stroke-dashoffset: var(--ring-offset);
+  }
+}
+
+@keyframes routing-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@keyframes routing-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes agent-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer utilities {
+  .animate-stagger-fade-in {
+    animation: stagger-fade-in 0.4s ease-out both;
+  }
+  .animate-progress-ring {
+    animation: progress-ring 1s ease-out forwards;
+  }
+  .animate-routing-pulse {
+    animation: routing-pulse 1.5s ease-in-out infinite;
+  }
+  .animate-routing-scan {
+    animation: routing-scan 1.2s ease-in-out infinite;
+  }
+  .animate-agent-reveal {
+    animation: agent-reveal 0.35s ease-out both;
+  }
+}

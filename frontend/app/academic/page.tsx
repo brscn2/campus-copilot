@@ -344,7 +344,7 @@ function CoursesTab() {
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {group.items.map((sc) => {
+                  {group.items.map((sc, cardIndex) => {
                     const mastery = masteryMap[sc.dataset_name] ?? 0
                     const isDragging = draggingId === sc.dataset_name
                     return (
@@ -362,8 +362,9 @@ function CoursesTab() {
                             setSelectedSynced(sc)
                           }
                         }}
+                        style={{ animationDelay: `${cardIndex * 60}ms` }}
                         className={cn(
-                          "group cursor-grab text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 active:cursor-grabbing",
+                          "animate-stagger-fade-in group cursor-grab text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 active:cursor-grabbing",
                           isDragging && "opacity-50",
                         )}
                       >
@@ -1468,8 +1469,8 @@ function ThesisTab() {
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
-        {theses.map((t) => (
-          <Card key={t.id}>
+        {theses.map((t, i) => (
+          <Card key={t.id} className="animate-stagger-fade-in" style={{ animationDelay: `${i * 75}ms` }}>
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
