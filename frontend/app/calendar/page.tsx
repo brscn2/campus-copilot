@@ -96,20 +96,23 @@ function deadlinesToCalendarEvents(
 
   return deadlines
     .filter((d) => {
-      const due = new Date(d.due + "T00:00:00")
+      const due = new Date(d.dueAt)
       return due >= monday && due <= sunday
     })
     .map((d) => {
-      const due = new Date(d.due + "T00:00:00")
+      const due = new Date(d.dueAt)
       const day = (due.getDay() + 6) % 7
+      const dueHour = due.getHours() + due.getMinutes() / 60
+      const start = Math.max(0, dueHour - 0.5)
+      const end = dueHour
       return {
         id: `deadline-${d.id}`,
         title: `📅 ${d.course}: ${d.task}`,
         day,
-        start: 8,
-        end: 8.5,
+        start,
+        end,
         agent: "academic" as const,
-        location: `Due ${d.due} · ${d.weight}`,
+        location: `Due ${due.getHours()}:${String(due.getMinutes()).padStart(2, "0")} · ${d.weight}`,
         conflict: false,
         google_event_id: null,
       }

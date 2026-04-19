@@ -88,6 +88,7 @@ export interface Deadline {
   course: string
   task: string
   due: string
+  dueAt: string
   weight: string
   masteryGap: number
   priority: number
@@ -113,6 +114,7 @@ export async function listDeadlines(courseId?: string): Promise<Deadline[]> {
     course: d.course_id,
     task: d.title,
     due: d.due_at.split("T")[0],
+    dueAt: d.due_at,
     weight: `${Math.round(d.weight * 100)}%`,
     masteryGap: d.mastery_gap,
     priority: d.priority,

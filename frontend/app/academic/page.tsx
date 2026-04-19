@@ -546,7 +546,8 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   return (
     <>
       <Dialog open={!!course && !quizOpen && !flashcardOpen} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="my-8 max-h-[80vh] max-w-2xl overflow-y-auto pb-6">
+        <DialogContent className="my-8 max-h-[80vh] max-w-2xl overflow-hidden">
+          <div className="max-h-[calc(80vh-2rem)] overflow-y-auto px-6 pb-6 -mx-6 -mb-6">
           {course ? (
             <>
               <DialogHeader>
@@ -686,6 +687,7 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
               )}
             </>
           ) : null}
+          </div>
         </DialogContent>
       </Dialog>
 
