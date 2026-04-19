@@ -6,7 +6,6 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from src.config import DEMO_STUDENT_ID
 from src.integrations.library import search_rooms
 from src.integrations.moodle import get_courses, get_uploads
 from src.integrations.tumonline import search_thesis_opportunities
@@ -18,6 +17,7 @@ router = APIRouter(prefix="/academic", tags=["academic"])
 async def list_courses(semester: str | None = None) -> list[dict[str, Any]]:
     """List enrolled Moodle courses, optionally filtered by semester."""
     return await get_courses(semester=semester)
+
 
 @router.get("/courses/{course_id}/uploads")
 async def list_uploads(course_id: str) -> list[dict[str, Any]]:

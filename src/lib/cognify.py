@@ -125,7 +125,6 @@ def get_job_status(job_id: str) -> dict[str, Any] | None:
     return _jobs.get(job_id)
 
 
-
 async def trigger_student_cognify(student_id: str) -> None:
     """Trigger a lightweight cognify on a student's memory dataset.
 

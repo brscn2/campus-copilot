@@ -12,7 +12,11 @@ from langchain_core.tools import tool
 from src.integrations.jobs import search_jobs as _search_jobs
 from src.integrations.tumonline import (
     get_grades as _get_grades,
+)
+from src.integrations.tumonline import (
     get_identity as _get_identity,
+)
+from src.integrations.tumonline import (
     get_lectures as _get_lectures,
 )
 from src.lib.skill_inference import infer_skills, is_noise_lecture

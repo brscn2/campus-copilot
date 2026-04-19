@@ -27,6 +27,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - jobcache:/app/.cache
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -47,3 +49,4 @@ services:
 
 volumes:
   pgdata:
+  jobcache:

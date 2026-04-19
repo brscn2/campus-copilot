@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import Any
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urljoin
 
 import httpx
 

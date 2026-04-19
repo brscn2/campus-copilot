@@ -8,8 +8,8 @@ from __future__ import annotations
 import asyncio
 
 from src.agents.base import AgentInput
-from src.config import DEMO_STUDENT_ID
 from src.agents.social.graph import run
+from src.config import DEMO_STUDENT_ID
 
 
 async def main() -> None:

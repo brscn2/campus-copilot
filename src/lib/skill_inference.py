@@ -33,11 +33,13 @@ SKILL_MAP: dict[str, list[str]] = {
 
 _LLM_CACHE: dict[str, list[str]] = {}
 
-NOISE_TITLES = frozenset([
-    "fachschaftsvollversammlung",
-    "vollversammlung",
-    "studentische vertretung",
-])
+NOISE_TITLES = frozenset(
+    [
+        "fachschaftsvollversammlung",
+        "vollversammlung",
+        "studentische vertretung",
+    ]
+)
 
 EXTRACT_SKILLS_PROMPT = """Extract exactly 3 broad, industry-recognized technical skills from this university course.
 Use short, standard skill names that appear on LinkedIn or job postings (e.g. "Machine Learning", "Python", "Computer Vision").
@@ -173,3 +175,112 @@ async def infer_skills(
                 }
 
     return sorted(skill_scores.values(), key=lambda s: s["level"], reverse=True)
+
+
+PROGRAM_KEYWORDS: dict[str, list[str]] = {
+    "informatik": [
+        "Software Engineer",
+        "Software Developer",
+        "Data Scientist",
+        "Machine Learning",
+        "Backend Developer",
+        "Full Stack Developer",
+        "DevOps",
+        "Cloud Engineer",
+        "AI Engineer",
+        "Data Engineer",
+    ],
+    "electrical engineering": [
+        "Embedded Systems",
+        "Hardware Engineer",
+        "Signal Processing",
+        "FPGA",
+        "Firmware Engineer",
+        "Electronics",
+    ],
+    "mechanical engineering": [
+        "CAD Engineer",
+        "Simulation Engineer",
+        "Automotive",
+        "Manufacturing",
+        "Robotics",
+    ],
+    "mathematics": [
+        "Data Scientist",
+        "Quantitative Analyst",
+        "Machine Learning",
+        "Statistician",
+        "Algorithm Engineer",
+    ],
+    "physics": [
+        "Data Scientist",
+        "Simulation",
+        "Quantum Computing",
+        "Research Engineer",
+        "Optics Engineer",
+    ],
+    "management and technology": [
+        "Product Manager",
+        "Business Analyst",
+        "Consultant",
+        "Project Manager",
+        "Technical Program Manager",
+    ],
+}
+
+DEFAULT_SEARCH_KEYWORDS: list[str] = PROGRAM_KEYWORDS["informatik"]
+
+
+def _resolve_program_keywords(program: str) -> list[str]:
+    """Map a TUM program name to broad job-search keywords."""
+    lower = program.lower()
+    for key, keywords in PROGRAM_KEYWORDS.items():
+        if key in lower:
+            return keywords
+    return PROGRAM_KEYWORDS["informatik"]
+
+
+def derive_search_keywords(
+    skills: list[dict[str, Any]],
+    program: str = "",
+    max_keywords: int = 8,
+) -> list[str]:
+    """Build search keywords from the student's major and top skills.
+
+    Starts with broad job-role terms for the student's program (e.g.,
+    "Software Engineer", "Data Scientist" for Informatik), then appends
+    specific skills from coursework. This ensures TheirStack returns jobs
+    an Informatik student would actually apply for, not just keyword-narrow
+    matches.
+
+    Args:
+        skills: Output of infer_skills(), sorted by proficiency descending.
+        program: TUM program name (e.g., "Informatik", "Mechanical Engineering").
+        max_keywords: Maximum keywords to return.
+
+    Returns:
+        Deduplicated keywords: program roles first, then top skills.
+    """
+    base = _resolve_program_keywords(program) if program else list(DEFAULT_SEARCH_KEYWORDS)
+
+    seen: set[str] = set()
+    keywords: list[str] = []
+
+    for term in base:
+        lower = term.lower()
+        if lower not in seen:
+            seen.add(lower)
+            keywords.append(term)
+        if len(keywords) >= max_keywords:
+            return keywords
+
+    for s in skills:
+        name = s.get("name", "").strip()
+        if not name or name.lower() in seen:
+            continue
+        seen.add(name.lower())
+        keywords.append(name)
+        if len(keywords) >= max_keywords:
+            break
+
+    return keywords or list(DEFAULT_SEARCH_KEYWORDS)

@@ -56,9 +56,7 @@ async def _fetch(endpoint: str) -> list[dict[str, str | None]]:
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         resp = await client.get(url)
         if resp.status_code != 200:
-            raise TUMSystemUnavailableError(
-                f"TUMonline returned {resp.status_code} for {endpoint}"
-            )
+            raise TUMSystemUnavailableError(f"TUMonline returned {resp.status_code} for {endpoint}")
         return _parse_rows(resp.text)
 
 
@@ -104,19 +102,21 @@ async def get_grades() -> list[dict[str, Any]]:
         except ValueError:
             credits = 0
 
-        grades.append({
-            "course_code": row.get("lv_nummer", ""),
-            "title": row.get("lv_titel", ""),
-            "grade": grade_str,
-            "grade_float": grade_float,
-            "credits": credits,
-            "semester": row.get("lv_semester", ""),
-            "examiner": row.get("pruefer_nachname", ""),
-            "exam_type": row.get("exam_typ_name", ""),
-            "exam_mode": row.get("modus", ""),
-            "program": row.get("studienbezeichnung", ""),
-            "degree": row.get("abschluss_name_kurz", ""),
-        })
+        grades.append(
+            {
+                "course_code": row.get("lv_nummer", ""),
+                "title": row.get("lv_titel", ""),
+                "grade": grade_str,
+                "grade_float": grade_float,
+                "credits": credits,
+                "semester": row.get("lv_semester", ""),
+                "examiner": row.get("pruefer_nachname", ""),
+                "exam_type": row.get("exam_typ_name", ""),
+                "exam_mode": row.get("modus", ""),
+                "program": row.get("studienbezeichnung", ""),
+                "degree": row.get("abschluss_name_kurz", ""),
+            }
+        )
     return grades
 
 
@@ -137,19 +137,21 @@ async def get_lectures() -> list[dict[str, Any]]:
         else:
             display_title = title
 
-        lectures.append({
-            "title": display_title,
-            "code": code,
-            "full_title": title,
-            "stp_sp_nr": row.get("stp_sp_nr", ""),
-            "type": row.get("stp_lv_art_name", ""),
-            "type_short": row.get("stp_lv_art_kurz", ""),
-            "semester": row.get("semester_name", ""),
-            "semester_id": row.get("semester_id", ""),
-            "hours_per_week": row.get("stp_sp_sst", ""),
-            "chair": row.get("org_name_betreut", ""),
-            "lecturers": row.get("vortragende_mitwirkende", ""),
-        })
+        lectures.append(
+            {
+                "title": display_title,
+                "code": code,
+                "full_title": title,
+                "stp_sp_nr": row.get("stp_sp_nr", ""),
+                "type": row.get("stp_lv_art_name", ""),
+                "type_short": row.get("stp_lv_art_kurz", ""),
+                "semester": row.get("semester_name", ""),
+                "semester_id": row.get("semester_id", ""),
+                "hours_per_week": row.get("stp_sp_sst", ""),
+                "chair": row.get("org_name_betreut", ""),
+                "lecturers": row.get("vortragende_mitwirkende", ""),
+            }
+        )
     return lectures
 
 
@@ -176,7 +178,9 @@ async def get_course_description(course_id: int | str) -> dict[str, Any] | None:
                 url, headers={"Authorization": f"Bearer {token_resp}", "accept": "application/json"}
             )
             if resp.status_code != 200:
-                logger.warning("tumonline_course_not_found", course_id=course_id, status=resp.status_code)
+                logger.warning(
+                    "tumonline_course_not_found", course_id=course_id, status=resp.status_code
+                )
                 return None
             return resp.json()
     except Exception:
