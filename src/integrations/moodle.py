@@ -7,6 +7,9 @@ and downloads all course materials via Download Center as numbered zips.
 
 from __future__ import annotations
 
+import hashlib
+import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -364,64 +367,217 @@ async def get_slides(*, course_id: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Deadlines — MOCK
-#
-# TODO(campus-copilot): replace with Moodle iCal export at
-# /calendar/export.php — gives due_at/title/course_id without DOM scraping.
-# Tracked as a follow-up ticket.
+# Deadlines — real Moodle calendar scraper with mock fallback
 # ---------------------------------------------------------------------------
 
+CALENDAR_UPCOMING_URL = f"{MOODLE_BASE}/calendar/view.php?view=upcoming"
 
-_MOCK_DEADLINES: dict[str, list[dict[str, Any]]] = {
-    "moodle-IN2346": [
-        {
-            "deadline_id": "dl-idl-hw1",
-            "title": "Homework 1 — Neural Network Implementation",
-            "due_at": "2026-04-25T23:59:00+02:00",
-            "weight": 0.15,
-            "source": "moodle",
-        },
-        {
-            "deadline_id": "dl-idl-hw2",
-            "title": "Homework 2 — CNN from Scratch",
-            "due_at": "2026-05-09T23:59:00+02:00",
-            "weight": 0.15,
-            "source": "moodle",
-        },
-        {
-            "deadline_id": "dl-idl-midterm",
-            "title": "Midterm Exam",
-            "due_at": "2026-05-20T10:00:00+02:00",
-            "weight": 0.30,
-            "source": "tumonline",
-        },
-    ],
-    "moodle-IN2064": [
-        {
-            "deadline_id": "dl-ml-hw1",
-            "title": "Exercise Sheet 1 — Linear Regression",
-            "due_at": "2026-04-22T23:59:00+02:00",
-            "weight": 0.10,
-            "source": "moodle",
-        },
-        {
-            "deadline_id": "dl-ml-project",
-            "title": "Project Proposal Submission",
-            "due_at": "2026-05-01T23:59:00+02:00",
-            "weight": 0.20,
-            "source": "moodle",
-        },
-    ],
-    "moodle-IN2349": [
-        {
-            "deadline_id": "dl-adl-paper",
-            "title": "Paper Review — Attention Is All You Need",
-            "due_at": "2026-04-28T23:59:00+02:00",
-            "weight": 0.10,
-            "source": "moodle",
-        },
-    ],
+_MOCK_DEADLINES: list[dict[str, Any]] = [
+    {
+        "deadline_id": "dl-idl-hw1",
+        "course_id": "IN2346",
+        "title": "Homework 1 — Neural Network Implementation",
+        "due_at": "2026-04-25T23:59:00+02:00",
+        "weight": 0.15,
+        "mastery_gap": 42,
+        "priority": 88,
+        "source": "moodle",
+    },
+    {
+        "deadline_id": "dl-idl-hw2",
+        "course_id": "IN2346",
+        "title": "Homework 2 — CNN from Scratch",
+        "due_at": "2026-05-09T23:59:00+02:00",
+        "weight": 0.15,
+        "mastery_gap": 55,
+        "priority": 72,
+        "source": "moodle",
+    },
+    {
+        "deadline_id": "dl-idl-midterm",
+        "course_id": "IN2346",
+        "title": "Midterm Exam",
+        "due_at": "2026-05-20T10:00:00+02:00",
+        "weight": 0.30,
+        "mastery_gap": 61,
+        "priority": 92,
+        "source": "moodle",
+    },
+    {
+        "deadline_id": "dl-ml-hw1",
+        "course_id": "IN2064",
+        "title": "Exercise Sheet 1 — Linear Regression",
+        "due_at": "2026-04-22T23:59:00+02:00",
+        "weight": 0.10,
+        "mastery_gap": 28,
+        "priority": 85,
+        "source": "moodle",
+    },
+    {
+        "deadline_id": "dl-ml-project",
+        "course_id": "IN2064",
+        "title": "Project Proposal Submission",
+        "due_at": "2026-05-01T23:59:00+02:00",
+        "weight": 0.20,
+        "mastery_gap": 35,
+        "priority": 71,
+        "source": "moodle",
+    },
+    {
+        "deadline_id": "dl-adl-paper",
+        "course_id": "IN2349",
+        "title": "Paper Review — Attention Is All You Need",
+        "due_at": "2026-04-28T23:59:00+02:00",
+        "weight": 0.10,
+        "mastery_gap": 19,
+        "priority": 54,
+        "source": "moodle",
+    },
+]
+
+
+_DE_MONTHS: dict[str, int] = {
+    "januar": 1, "februar": 2, "märz": 3, "april": 4,
+    "mai": 5, "juni": 6, "juli": 7, "august": 8,
+    "september": 9, "oktober": 10, "november": 11, "dezember": 12,
 }
+
+_IS_DUE_SUFFIX = re.compile(r"\s+is\s+due$", re.IGNORECASE)
+
+
+def _parse_german_date(text: str) -> str:
+    """Best-effort parse of Moodle's German locale dates into ISO 8601.
+
+    Handles patterns like "Freitag, 1. Mai, 23:59" and
+    "Mittwoch, 28. April 2026, 23:59".
+    """
+    try:
+        return datetime.fromisoformat(text).isoformat()
+    except (ValueError, TypeError):
+        pass
+
+    cleaned = text.strip().rstrip(".")
+    nums = re.findall(r"\d+", cleaned)
+    lower = cleaned.lower()
+    month = 0
+    for name, num in _DE_MONTHS.items():
+        if name in lower:
+            month = num
+            break
+
+    if not month or not nums:
+        return text
+
+    day = int(nums[0])
+    year_candidates = [int(n) for n in nums if len(n) == 4]
+    year = year_candidates[0] if year_candidates else datetime.now().year
+
+    hour, minute = 23, 59
+    time_match = re.search(r"(\d{1,2}):(\d{2})", cleaned)
+    if time_match:
+        hour, minute = int(time_match.group(1)), int(time_match.group(2))
+
+    try:
+        dt = datetime(year, month, day, hour, minute, tzinfo=UTC)
+        return dt.isoformat()
+    except (ValueError, OverflowError):
+        return text
+
+
+def _clean_title(title: str) -> str:
+    """Strip Moodle UI suffixes like 'is due' from event titles."""
+    return _IS_DUE_SUFFIX.sub("", title).strip()
+
+
+def _make_deadline_id(title: str, due_at: str) -> str:
+    """Deterministic ID from title + due date."""
+    return "dl-" + hashlib.sha256(f"{title}|{due_at}".encode()).hexdigest()[:12]
+
+
+def _extract_course_code(course_name: str) -> str:
+    """Try to pull a TUM-style course code (e.g. 'IN2064') from a course name."""
+    match = re.search(r"\b([A-Z]{2}\d{4})\b", course_name)
+    return match.group(1) if match else course_name[:20]
+
+
+def _compute_priority(due_at_str: str) -> int:
+    """Heuristic priority based on time until due. Closer = higher."""
+    try:
+        due = datetime.fromisoformat(due_at_str)
+        now = datetime.now(UTC)
+        days_left = max((due - now).total_seconds() / 86400, 0)
+        if days_left <= 1:
+            return 98
+        if days_left <= 3:
+            return 90
+        if days_left <= 7:
+            return 75
+        if days_left <= 14:
+            return 60
+        return 40
+    except (ValueError, TypeError):
+        return 50
+
+
+async def _scrape_deadlines_from_calendar(
+    context: BrowserContext,
+) -> list[dict[str, Any]]:
+    """Scrape the Moodle upcoming calendar view for deadline events."""
+    page = await context.new_page()
+    try:
+        await page.goto(CALENDAR_UPCOMING_URL, wait_until="domcontentloaded")
+        await page.wait_for_timeout(2000)
+
+        deadlines: list[dict[str, Any]] = []
+        event_blocks = page.locator(".event")
+        count = await event_blocks.count()
+        logger.info("moodle_calendar_events_found", count=count)
+
+        for i in range(count):
+            block = event_blocks.nth(i)
+            try:
+                title_sel = ".name, h3, .referer a, a[href*='calendar/view.php']"
+                title_el = block.locator(title_sel).first
+                title = (await title_el.inner_text()).strip() if await title_el.count() > 0 else ""
+                if not title:
+                    continue
+
+                date_el = block.locator(".date, .col-11, time").first
+                date_text = ""
+                if await date_el.count() > 0:
+                    date_text = (
+                        await date_el.get_attribute("datetime")
+                        or (await date_el.inner_text()).strip()
+                    )
+
+                course_sel = ".course, .text-muted a, a[href*='course/view.php']"
+                course_el = block.locator(course_sel).first
+                course_name = ""
+                if await course_el.count() > 0:
+                    course_name = (await course_el.inner_text()).strip()
+
+                course_code = _extract_course_code(course_name) if course_name else "UNKNOWN"
+                title = _clean_title(title)
+                due_at = _parse_german_date(date_text) if date_text else ""
+                priority = _compute_priority(due_at)
+
+                deadlines.append({
+                    "deadline_id": _make_deadline_id(title, due_at),
+                    "course_id": course_code,
+                    "title": title,
+                    "due_at": due_at,
+                    "weight": 0.0,
+                    "mastery_gap": 0,
+                    "priority": priority,
+                    "source": "moodle",
+                })
+            except Exception:
+                logger.warning("moodle_calendar_event_parse_error", index=i, exc_info=True)
+                continue
+
+        return sorted(deadlines, key=lambda d: d.get("due_at", ""))
+    finally:
+        await page.close()
 
 
 async def get_deadlines(
@@ -429,28 +585,62 @@ async def get_deadlines(
     student_id: str,
     course_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Return upcoming deadlines for a student, optionally filtered by course.
+    """Return upcoming deadlines scraped from Moodle's calendar.
 
-    Currently returns curated mock data — Moodle has no first-class deadline
-    feed in this scraper yet. See module-level TODO for the planned iCal-based
-    replacement.
+    Falls back to mock data when TUM credentials are not configured or
+    Moodle is unreachable.
 
     Args:
-        student_id: Student identifier (unused by the mock; logged only).
-        course_id: Optional course filter. Unknown course returns [].
+        student_id: Student identifier (logged for tracing).
+        course_id: Optional course code filter (e.g. "IN2064").
 
     Returns:
         List of deadline dicts sorted by `due_at`.
     """
-    logger.info("moodle_get_deadlines_mock", student_id=student_id, course_id=course_id)
+    settings = get_settings()
 
-    if course_id is not None:
-        return list(_MOCK_DEADLINES.get(course_id, []))
+    if not settings.tum_username or not settings.tum_password:
+        logger.info(
+            "moodle_deadlines_fallback_mock",
+            reason="no_credentials",
+            student_id=student_id,
+        )
+        return _filter_deadlines(_MOCK_DEADLINES, course_id)
 
-    all_deadlines: list[dict[str, Any]] = []
-    for deadlines in _MOCK_DEADLINES.values():
-        all_deadlines.extend(deadlines)
-    return sorted(all_deadlines, key=lambda d: d["due_at"])
+    session_dir = Path(settings.moodle_session_dir)
+    try:
+        pw, context = await _ensure_browser_context(session_dir)
+        try:
+            await _ensure_logged_in(context, session_dir)
+            deadlines = await _scrape_deadlines_from_calendar(context)
+            logger.info(
+                "moodle_deadlines_scraped",
+                student_id=student_id,
+                count=len(deadlines),
+            )
+            await _save_session(context, session_dir)
+            if not deadlines:
+                logger.info("moodle_deadlines_empty_fallback_mock")
+                return _filter_deadlines(_MOCK_DEADLINES, course_id)
+            return _filter_deadlines(deadlines, course_id)
+        finally:
+            await context.close()
+            await pw.stop()
+    except Exception:
+        logger.warning("moodle_deadlines_scrape_failed_fallback_mock", exc_info=True)
+        return _filter_deadlines(_MOCK_DEADLINES, course_id)
+
+
+def _filter_deadlines(
+    deadlines: list[dict[str, Any]],
+    course_id: str | None,
+) -> list[dict[str, Any]]:
+    if course_id is None:
+        return sorted(deadlines, key=lambda d: d.get("due_at", ""))
+    return sorted(
+        [d for d in deadlines if d.get("course_id") == course_id],
+        key=lambda d: d.get("due_at", ""),
+    )
 
 
 async def get_uploads(moodle_course_id: str) -> list[dict[str, Any]]:

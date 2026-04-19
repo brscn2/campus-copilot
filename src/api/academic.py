@@ -14,8 +14,18 @@ from src.integrations.library import (
     search_rooms,
     verify_booking,
 )
-from src.integrations.moodle import get_courses, get_uploads
-from src.integrations.tumonline import search_thesis_opportunities
+from src.integrations.moodle import get_courses, get_deadlines, get_uploads
+from src.integrations.tumonline import (
+    get_grades,
+    get_identity,
+    get_lectures,
+    search_thesis_opportunities,
+)
+from src.lib.logging import get_logger
+from src.lib.skill_inference import infer_skills
+from src.lib.thesis_matching import match_theses_via_cognee
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/academic", tags=["academic"])
 
@@ -31,16 +41,33 @@ async def list_uploads(course_id: str) -> list[dict[str, Any]]:
     return await get_uploads(moodle_course_id=course_id)
 
 
+@router.get("/deadlines")
+async def list_deadlines(course_id: str | None = None) -> list[dict[str, Any]]:
+    """List upcoming deadlines for the demo student, optionally filtered by course."""
+    return await get_deadlines(student_id=DEMO_STUDENT_ID, course_id=course_id)
+
+
 @router.get("/thesis")
 async def list_thesis(
     keywords: str | None = None,
     chair: str | None = None,
     tags: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search thesis opportunities."""
+    """Search thesis opportunities with Cognee-powered profile matching."""
     kw_list = keywords.split(",") if keywords else None
     tag_list = tags.split(",") if tags else None
-    return await search_thesis_opportunities(keywords=kw_list, chair=chair, tags=tag_list)
+    raw = await search_thesis_opportunities(keywords=kw_list, chair=chair, tags=tag_list)
+
+    try:
+        identity = await get_identity()
+        grades = await get_grades()
+        lectures = await get_lectures()
+        skills = await infer_skills(grades, lectures)
+    except Exception:
+        logger.warning("thesis_profile_fetch_failed", exc_info=True)
+        identity, grades, lectures, skills = {}, [], [], []
+
+    return await match_theses_via_cognee(raw, grades, lectures, skills, identity)
 
 
 # --- Library Room Booking (anny.eu) ---

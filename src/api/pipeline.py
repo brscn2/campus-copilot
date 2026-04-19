@@ -196,9 +196,33 @@ async def list_synced_courses(
 
     overrides = await overrides_repo.get_overrides(session, student_id)
 
+    from src.integrations.tumonline import get_lectures
+
+    _SEM_NORM: dict[str, str] = {}
+    try:
+        lectures = await get_lectures()
+        for lec in lectures:
+            raw_code = lec.get("code", "")
+            raw_sem = lec.get("semester", "")
+            if not raw_code or not raw_sem:
+                continue
+            sem = raw_sem.replace("Sommersemester ", "SoSe ").replace(
+                "Wintersemester ", "WiSe "
+            ).replace("/26", "/2026")
+            for c in raw_code.split(","):
+                _SEM_NORM[c.strip().upper()] = sem
+    except Exception:
+        logger.warning("tumonline_lectures_unavailable_for_semester", exc_info=True)
+
     courses: list[SyncedCourse] = []
     for dataset, pdf_count in sorted(course_files.items()):
         display_name, code, semester = _parse_download_folder(dataset)
+        if not semester and code:
+            for sub in code.split(","):
+                sub = sub.strip().upper()
+                if sub in _SEM_NORM:
+                    semester = _SEM_NORM[sub]
+                    break
         override = overrides.get(dataset, {})
         if override.get("semester"):
             semester = override["semester"]
@@ -321,3 +345,100 @@ async def get_file_url(course_id: str, filename: str) -> PresignedUrlResponse:
     logger.info("pipeline_presigned_url", key=key)
     url = await generate_presigned_url(key)
     return PresignedUrlResponse(url=url, key=key)
+
+
+# ---------------------------------------------------------------------------
+# Course files with progress + mastery (per spec)
+# ---------------------------------------------------------------------------
+
+from src.storage.repositories import course_files as cf_repo
+
+
+@router.get("/synced/{dataset_name}/files")
+async def list_files_with_progress(
+    dataset_name: str,
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """List course files with per-student completion status."""
+    files = await cf_repo.get_files_with_progress(session, student_id, dataset_name)
+    lectures = [f for f in files if f["category"] == "lecture"]
+    exercises = [f for f in files if f["category"] == "exercise"]
+    return {
+        "files": files,
+        "summary": {
+            "total": len(files),
+            "completed": sum(1 for f in files if f["completed"]),
+            "lectures": {
+                "total": len(lectures),
+                "completed": sum(1 for f in lectures if f["completed"]),
+            },
+            "exercises": {
+                "total": len(exercises),
+                "completed": sum(1 for f in exercises if f["completed"]),
+            },
+        },
+    }
+
+
+class ProgressToggle(BaseModel):
+    student_id: str = "demo"
+    completed: bool
+
+
+@router.put("/synced/{dataset_name}/files/{file_id}/progress")
+async def toggle_progress(
+    dataset_name: str,
+    file_id: str,
+    body: ProgressToggle,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Toggle file completion for a student."""
+    return await cf_repo.toggle_file_progress(
+        session, body.student_id, file_id, completed=body.completed
+    )
+
+
+@router.get("/synced/{dataset_name}/concepts")
+async def list_concepts(
+    dataset_name: str,
+    student_id: str = "demo",
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """List concepts with per-signal mastery breakdown."""
+    concepts = await cf_repo.compute_concept_mastery(session, student_id, dataset_name)
+    return {
+        "concepts": [
+            {
+                "name": c.concept,
+                "mastery": c.mastery,
+                "breakdown": {
+                    "lectures": c.lecture_pct,
+                    "exercises": c.exercise_pct,
+                    "quizzes": c.quiz_pct,
+                    "flashcards": c.flashcard_pct,
+                    "manual_boost": c.manual_boost,
+                },
+            }
+            for c in concepts
+        ]
+    }
+
+
+class ManualBoostBody(BaseModel):
+    student_id: str = "demo"
+    boost: float
+
+
+@router.put("/synced/{dataset_name}/concepts/{concept_name}/boost")
+async def set_boost(
+    dataset_name: str,
+    concept_name: str,
+    body: ManualBoostBody,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, str]:
+    """Set manual mastery boost for a concept."""
+    if body.boost < 0 or body.boost > 100:
+        raise HTTPException(status_code=400, detail="boost must be 0-100")
+    await cf_repo.set_manual_boost(session, body.student_id, dataset_name, concept_name, body.boost)
+    return {"status": "ok"}

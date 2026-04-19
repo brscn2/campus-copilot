@@ -24,10 +24,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { deadlines, theses, studyRooms } from "@/lib/mock-data"
 import {
   runFullPipeline,
   listCourseFiles,
+  listEnrichedFiles,
+  toggleFileProgress,
   getFileUrl,
   listSyncedCourses,
   listCourseOverrides,
@@ -38,23 +39,39 @@ import {
   requestFlashcards,
   submitQuiz,
   submitFlashcards,
+  listLibraryBranches,
+  searchLibraryRooms,
+  bookLibraryRoom,
   type CourseFile,
+  type EnrichedFile,
+  type FileSummary,
   type SyncedCourse,
   type QuizQuestion,
   type FlashcardItem,
+  type LibraryBranch,
+  type RoomSearchResult,
+  type ScrapedRoom,
+  listDeadlines,
+  listTheses,
+  createCalendarEvent,
+  type Deadline,
+  type ThesisOpportunity,
 } from "@/lib/api"
 import { AgentBadge } from "@/components/agent-badge"
 import {
   ArrowRight,
   ArrowUpDown,
   BookOpen,
+  Check,
   Calendar as CalendarIcon,
   ChevronRight,
+  Clock,
   Download,
   FileText,
   GripVertical,
   Layers,
   Loader2,
+  ExternalLink,
   Mail,
   MapPin,
   Plus,
@@ -473,7 +490,8 @@ function CoursesTab() {
 }
 
 function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; onClose: () => void }) {
-  const [files, setFiles] = React.useState<CourseFile[]>([])
+  const [files, setFiles] = React.useState<EnrichedFile[]>([])
+  const [summary, setSummary] = React.useState<FileSummary | null>(null)
   const [filesLoading, setFilesLoading] = React.useState(false)
   const [quizOpen, setQuizOpen] = React.useState(false)
   const [flashcardOpen, setFlashcardOpen] = React.useState(false)
@@ -486,9 +504,12 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   React.useEffect(() => {
     if (course) {
       setFilesLoading(true)
-      listCourseFiles(course.dataset_name)
-        .then((res) => setFiles(res.files))
-        .catch(() => setFiles([]))
+      listEnrichedFiles(course.dataset_name, STUDENT_ID)
+        .then((res) => {
+          setFiles(res.files)
+          setSummary(res.summary)
+        })
+        .catch(() => { setFiles([]); setSummary(null) })
         .finally(() => setFilesLoading(false))
 
       getCourseProgress("demo", course.dataset_name)
@@ -525,7 +546,7 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
   return (
     <>
       <Dialog open={!!course && !quizOpen && !flashcardOpen} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="my-8 max-h-[80vh] max-w-2xl overflow-y-auto pb-6">
           {course ? (
             <>
               <DialogHeader>
@@ -585,40 +606,76 @@ function SyncedCourseDialog({ course, onClose }: { course: SyncedCourse | null; 
               )}
 
               {files.length > 0 && (
-                <div>
-                  <div className="mb-2 text-sm font-medium">Lecture slides ({files.length})</div>
-                  <div className="max-h-[200px] overflow-y-auto rounded-lg border border-border">
-                    <div className="flex flex-col">
-                      {files.map((f) => {
-                        const filename = f.key.split("/").pop() ?? f.key
-                        return (
-                          <div
-                            key={f.key}
-                            className="flex items-center justify-between border-b border-border p-2.5 last:border-b-0"
-                          >
-                            <div className="flex items-center gap-2 text-sm">
-                              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                              <span className="truncate">{filename}</span>
-                              <span className="shrink-0 text-xs text-muted-foreground">
-                                ({(f.size / 1024).toFixed(0)} KB)
-                              </span>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="shrink-0 gap-1.5"
-                              onClick={async () => {
-                                const res = await getFileUrl(course.dataset_name, filename)
-                                window.open(res.url, "_blank")
-                              }}
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        )
-                      })}
+                <div className="space-y-3">
+                  {summary && (
+                    <div className="flex gap-4 text-xs text-muted-foreground">
+                      <span>{summary.lectures.total} lectures</span>
+                      <span>{summary.exercises.total} exercises</span>
+                      <span>{summary.completed}/{summary.total} completed</span>
                     </div>
-                  </div>
+                  )}
+                  {(["lecture", "exercise"] as const).map((cat) => {
+                    const catFiles = files.filter((f) => f.category === cat)
+                    if (catFiles.length === 0) return null
+                    return (
+                      <div key={cat}>
+                        <div className="mb-1.5 text-sm font-medium capitalize">{cat}s ({catFiles.length})</div>
+                        <div className="max-h-[180px] overflow-y-auto rounded-lg border border-border">
+                          <div className="flex flex-col">
+                            {catFiles.map((f) => (
+                              <div
+                                key={f.id}
+                                className="flex items-center justify-between border-b border-border p-2 last:border-b-0"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <button
+                                    className={cn(
+                                      "flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors",
+                                      f.completed
+                                        ? "border-primary bg-primary text-primary-foreground"
+                                        : "border-border hover:border-primary/50",
+                                    )}
+                                    onClick={async () => {
+                                      const next = !f.completed
+                                      setFiles((prev) => prev.map((p) => (p.id === f.id ? { ...p, completed: next } : p)))
+                                      setSummary((prev) => prev ? {
+                                        ...prev,
+                                        completed: prev.completed + (next ? 1 : -1),
+                                        [cat === "lecture" ? "lectures" : "exercises"]: {
+                                          ...prev[cat === "lecture" ? "lectures" : "exercises"],
+                                          completed: prev[cat === "lecture" ? "lectures" : "exercises"].completed + (next ? 1 : -1),
+                                        },
+                                      } : prev)
+                                      await toggleFileProgress(course.dataset_name, f.id, next, STUDENT_ID).catch(() => {
+                                        setFiles((prev) => prev.map((p) => (p.id === f.id ? { ...p, completed: !next } : p)))
+                                      })
+                                    }}
+                                  >
+                                    {f.completed && <Check className="h-3 w-3" />}
+                                  </button>
+                                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                  <span className={cn("truncate text-sm", f.completed && "line-through text-muted-foreground")}>
+                                    {f.display_name}
+                                  </span>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="shrink-0"
+                                  onClick={async () => {
+                                    const res = await getFileUrl(course.dataset_name, f.filename)
+                                    window.open(res.url, "_blank")
+                                  }}
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
@@ -1327,9 +1384,172 @@ function FlashcardDialog({
   )
 }
 
+function _studySlots(dueDate: string): { label: string; starts_at: string; ends_at: string }[] {
+  const due = new Date(dueDate + "T23:59:00")
+  const slots: { label: string; starts_at: string; ends_at: string }[] = []
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  const blockHours = [
+    [9, 11],
+    [14, 16],
+    [16, 18],
+  ]
+
+  for (let dayOffset = -5; dayOffset <= -1; dayOffset++) {
+    const day = new Date(due)
+    day.setDate(due.getDate() + dayOffset)
+    if (day <= new Date()) continue
+    for (const [startH, endH] of blockHours) {
+      const start = new Date(day)
+      start.setHours(startH, 0, 0, 0)
+      const end = new Date(day)
+      end.setHours(endH, 0, 0, 0)
+      const pad = (n: number) => String(n).padStart(2, "0")
+      slots.push({
+        label: `${dayNames[day.getDay()]} ${pad(startH)}:00 – ${pad(endH)}:00`,
+        starts_at: start.toISOString(),
+        ends_at: end.toISOString(),
+      })
+      if (slots.length >= 5) return slots
+    }
+  }
+  return slots
+}
+
+function ScheduleStudyBlockDialog({
+  deadline,
+  onClose,
+}: {
+  deadline: Deadline
+  onClose: () => void
+}) {
+  const slots = React.useMemo(() => _studySlots(deadline.due), [deadline.due])
+  const [selected, setSelected] = React.useState(0)
+  const [syncing, setSyncing] = React.useState(false)
+
+  const handleConfirm = async () => {
+    const slot = slots[selected]
+    if (!slot) return
+    setSyncing(true)
+    try {
+      await createCalendarEvent({
+        title: `Study block: ${deadline.course} — ${deadline.task}`,
+        starts_at: slot.starts_at,
+        ends_at: slot.ends_at,
+        location: "MI Library",
+        agent: "academic",
+      })
+      toast.success("Study block synced to Google Calendar")
+      onClose()
+    } catch (err) {
+      toast.error(
+        `Failed to sync: ${err instanceof Error ? err.message : "Unknown error"}`,
+      )
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Schedule study block</DialogTitle>
+          <DialogDescription>
+            {deadline.course} — {deadline.task}
+          </DialogDescription>
+        </DialogHeader>
+        {slots.length === 0 ? (
+          <p className="py-4 text-sm text-muted-foreground">
+            No available slots before the due date.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {slots.map((slot, i) => (
+              <label
+                key={slot.starts_at}
+                className={cn(
+                  "flex cursor-pointer items-center justify-between rounded-lg border p-3 transition-colors hover:bg-muted/50",
+                  selected === i ? "border-primary bg-primary/5" : "border-border",
+                )}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="slot"
+                    checked={selected === i}
+                    onChange={() => setSelected(i)}
+                    className="accent-primary"
+                  />
+                  <div>
+                    <div className="text-sm font-medium">{slot.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      MI Library
+                    </div>
+                  </div>
+                </div>
+                <AgentBadge agent="academic" />
+              </label>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirm} disabled={syncing || slots.length === 0}>
+            {syncing ? (
+              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+            )}
+            Sync to Calendar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function DeadlinesTab() {
   const [sortBy, setSortBy] = React.useState<"priority" | "due" | "weight">("priority")
-  const [scheduleOpen, setScheduleOpen] = React.useState<(typeof deadlines)[number] | null>(null)
+  const [scheduleOpen, setScheduleOpen] = React.useState<Deadline | null>(null)
+  const [deadlines, setDeadlines] = React.useState<Deadline[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [syncingAll, setSyncingAll] = React.useState(false)
+
+  React.useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    listDeadlines()
+      .then((data) => { if (!cancelled) setDeadlines(data) })
+      .catch(() => { if (!cancelled) toast.error("Failed to load deadlines") })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true)
+    let synced = 0
+    try {
+      for (const d of deadlines) {
+        await createCalendarEvent({
+          title: `📅 Deadline: ${d.course} — ${d.task}`,
+          starts_at: `${d.due}T08:00:00`,
+          ends_at: `${d.due}T08:30:00`,
+          location: "",
+          agent: "academic",
+        })
+        synced++
+      }
+      toast.success(`${synced} deadline${synced !== 1 ? "s" : ""} synced to Google Calendar`)
+    } catch (err) {
+      toast.error(
+        `Synced ${synced}/${deadlines.length} — ${err instanceof Error ? err.message : "error"}`,
+      )
+    } finally {
+      setSyncingAll(false)
+    }
+  }
 
   const sorted = [...deadlines].sort((a, b) => {
     if (sortBy === "priority") return b.priority - a.priority
@@ -1346,6 +1566,20 @@ function DeadlinesTab() {
             <CardDescription>Moodle + TUMonline, sorted by {sortBy}</CardDescription>
           </div>
           <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5"
+              onClick={handleSyncAll}
+              disabled={syncingAll || deadlines.length === 0}
+            >
+              {syncingAll ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CalendarIcon className="h-3 w-3" />
+              )}
+              Sync to Calendar
+            </Button>
             {(["priority", "due", "weight"] as const).map((k) => (
               <Button
                 key={k}
@@ -1361,6 +1595,11 @@ function DeadlinesTab() {
           </div>
         </CardHeader>
         <CardContent className="px-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
           <Table>
             <TableHeader>
               <TableRow>
@@ -1410,60 +1649,57 @@ function DeadlinesTab() {
               ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={!!scheduleOpen} onOpenChange={(o) => !o && setScheduleOpen(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Schedule study block</DialogTitle>
-            <DialogDescription>
-              {scheduleOpen?.course} — {scheduleOpen?.task}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            {["Tue 14:00 – 16:00", "Wed 09:00 – 11:00", "Thu 16:00 – 18:00"].map((slot, i) => (
-              <label
-                key={slot}
-                className="flex cursor-pointer items-center justify-between rounded-lg border border-border p-3 transition-colors hover:bg-muted/50"
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="slot"
-                    defaultChecked={i === 0}
-                    className="accent-primary"
-                  />
-                  <div>
-                    <div className="text-sm font-medium">{slot}</div>
-                    <div className="text-xs text-muted-foreground">MI Library · no conflicts</div>
-                  </div>
-                </div>
-                <AgentBadge agent="academic" />
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setScheduleOpen(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                toast.success("Study block added to calendar")
-                setScheduleOpen(null)
-              }}
-            >
-              Confirm
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {scheduleOpen && (
+        <ScheduleStudyBlockDialog
+          deadline={scheduleOpen}
+          onClose={() => setScheduleOpen(null)}
+        />
+      )}
     </>
   )
 }
 
 function ThesisTab() {
-  const [emailOpen, setEmailOpen] = React.useState<(typeof theses)[number] | null>(null)
+  const [theses, setTheses] = React.useState<ThesisOpportunity[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [emailOpen, setEmailOpen] = React.useState<ThesisOpportunity | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    listTheses()
+      .then((data) => {
+        if (!cancelled) setTheses(data)
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Failed to load thesis opportunities")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-sm text-muted-foreground">Matching thesis topics to your profile…</span>
+      </div>
+    )
+  }
+
+  if (theses.length === 0) {
+    return (
+      <div className="py-12 text-center text-sm text-muted-foreground">
+        No thesis opportunities found. Try again later.
+      </div>
+    )
+  }
 
   return (
     <>
@@ -1480,7 +1716,7 @@ function ThesisTab() {
                     {t.professor}
                   </div>
                 </div>
-                <MatchScore value={t.matchScore} />
+                <MatchScore value={t.match_score} />
               </div>
             </CardHeader>
             <CardContent>
@@ -1492,7 +1728,18 @@ function ThesisTab() {
                   </Badge>
                 ))}
               </div>
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex items-center justify-between">
+                {t.source_url ? (
+                  <a
+                    href={t.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    View listing
+                  </a>
+                ) : <span />}
                 <Button size="sm" className="gap-1.5" onClick={() => setEmailOpen(t)}>
                   <Mail className="h-3.5 w-3.5" />
                   Draft outreach email
@@ -1519,7 +1766,7 @@ function MatchScore({ value }: { value: number }) {
   )
 }
 
-function EmailComposer({ thesis, onClose }: { thesis: (typeof theses)[number] | null; onClose: () => void }) {
+function EmailComposer({ thesis, onClose }: { thesis: ThesisOpportunity | null; onClose: () => void }) {
   const [body, setBody] = React.useState("")
 
   React.useEffect(() => {
@@ -1593,64 +1840,266 @@ alex.mueller@tum.de`,
 }
 
 function StudyRoomTab() {
-  const [query, setQuery] = React.useState("quiet room near Mathematik, 2–5pm")
+  const [branches, setBranches] = React.useState<LibraryBranch[]>([])
+  const [selectedBranch, setSelectedBranch] = React.useState("mathematics-informatics")
+  const [data, setData] = React.useState<RoomSearchResult | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [booking, setBooking] = React.useState<string | null>(null)
+  const [selectedStart, setSelectedStart] = React.useState<string | null>(null)
+  const [selectedEnd, setSelectedEnd] = React.useState<string | null>(null)
+  const [selectedRoom, setSelectedRoom] = React.useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    listLibraryBranches()
+      .then(setBranches)
+      .catch(() => {})
+  }, [])
+
+  const loadRooms = React.useCallback((branch: string, date?: string) => {
+    setLoading(true)
+    setData(null)
+    searchLibraryRooms({ branch, target_date: date ?? undefined })
+      .then((result) => {
+        setData(result)
+        const defStart = result.startTimes.find((t) => t.selected)
+        const defEnd = result.endTimes.find((t) => t.selected)
+        const defRoom = result.rooms.find((r) => r.selected)
+        setSelectedStart(defStart?.time ?? result.startTimes[0]?.time ?? null)
+        setSelectedEnd(defEnd?.time ?? result.endTimes[0]?.time ?? null)
+        setSelectedRoom(defRoom?.name ?? result.rooms[0]?.name ?? null)
+        setSelectedDate(result.selectedDate)
+      })
+      .catch(() => toast.error("Failed to load room availability"))
+      .finally(() => setLoading(false))
+  }, [])
+
+  React.useEffect(() => {
+    loadRooms(selectedBranch)
+  }, [selectedBranch, loadRooms])
+
+  const handleBook = async () => {
+    if (!data || !selectedRoom || !selectedStart || !selectedEnd || !selectedDate) return
+    setBooking(selectedRoom)
+    try {
+      const result = await bookLibraryRoom({
+        branch: data.branch_slug,
+        room_name: selectedRoom,
+        date_day: selectedDate,
+        start_time: selectedStart,
+        end_time: selectedEnd,
+      })
+      if (result.status === "error") {
+        toast.error(result.message)
+      } else {
+        toast.success(result.message || `${selectedRoom} booked ${selectedStart} – ${selectedEnd}`)
+      }
+    } catch {
+      toast.error("Booking failed — check TUM credentials")
+    } finally {
+      setBooking(null)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="pl-9"
-              placeholder="Describe what you need…"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Library Branch</label>
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {branches.map((b) => (
+                  <option key={b.slug} value={b.slug}>{b.name}</option>
+                ))}
+                {branches.length === 0 && <option value={selectedBranch}>Loading…</option>}
+              </select>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={loading}
+              onClick={() => loadRooms(selectedBranch)}
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+              Refresh
+            </Button>
           </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            Try: &ldquo;quiet room near MI with whiteboard&rdquo;, &ldquo;group room for 6 tomorrow morning&rdquo;
-          </div>
+          {data && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              <MapPin className="mr-1 inline h-3 w-3" />
+              {data.branch_address}
+              {data.description && <> — {data.description}</>}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <div className="grid gap-3">
-        {studyRooms.map((r) => (
-          <Card key={r.id}>
-            <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-academic-soft text-academic">
-                  <BookOpen className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="font-medium">{r.name}</div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {r.building}
-                    </span>
-                    <span>Capacity {r.capacity}</span>
-                    <span>Available until {r.availableUntil}</span>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {r.amenities.map((a) => (
-                      <Badge key={a} variant="secondary" className="font-normal">
-                        {a}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="ml-2 text-sm text-muted-foreground">Scraping live availability from anny.eu…</span>
+        </div>
+      )}
+
+      {!loading && data && (
+        <>
+          {/* Date picker */}
+          <Card>
+            <CardContent className="pt-6">
+              <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                <CalendarIcon className="mr-1 inline h-3 w-3" />
+                Date {data.monthText && `— ${data.monthText}`}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {data.dates.filter((d) => !d.disabled).map((d) => (
+                  <Button
+                    key={d.day}
+                    size="sm"
+                    variant={d.day === selectedDate ? "default" : "outline"}
+                    className="h-9 w-12"
+                    onClick={() => {
+                      setSelectedDate(d.day)
+                      loadRooms(selectedBranch, d.day)
+                    }}
+                  >
+                    {d.day}
+                  </Button>
+                ))}
               </div>
-              <Button
-                className="gap-1.5 sm:self-center"
-                onClick={() => toast.success(`${r.name} booked for 14:00 – 17:00`)}
-              >
-                Book <ArrowRight className="h-3.5 w-3.5" />
-              </Button>
             </CardContent>
           </Card>
-        ))}
-      </div>
+
+          {/* Time selection */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                  <Clock className="mr-1 inline h-3 w-3" />
+                  Start Time
+                </label>
+                <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+                  {data.startTimes.map((t) => (
+                    <Button
+                      key={t.time}
+                      size="sm"
+                      variant={t.time === selectedStart ? "default" : "outline"}
+                      className="h-8 px-2.5 text-xs"
+                      onClick={() => setSelectedStart(t.time)}
+                    >
+                      {t.time}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <label className="mb-2 block text-xs font-medium text-muted-foreground">
+                  <Clock className="mr-1 inline h-3 w-3" />
+                  End Time
+                </label>
+                <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
+                  {data.endTimes.map((t) => (
+                    <Button
+                      key={t.time}
+                      size="sm"
+                      variant={t.time === selectedEnd ? "default" : "outline"}
+                      className="h-8 px-2.5 text-xs"
+                      onClick={() => setSelectedEnd(t.time)}
+                    >
+                      {t.time}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Features */}
+          {data.features.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {data.features.map((f) => (
+                <Badge key={f} variant="secondary" className="font-normal">{f}</Badge>
+              ))}
+            </div>
+          )}
+
+          {/* Room cards */}
+          <div className="grid gap-3">
+            {data.rooms.length === 0 && (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No rooms available for this date/time. Try a different day.
+              </div>
+            )}
+            {data.rooms.map((r) => (
+              <Card
+                key={r.name}
+                className={cn(
+                  "cursor-pointer transition-colors",
+                  r.name === selectedRoom && "ring-2 ring-primary",
+                )}
+                onClick={() => setSelectedRoom(r.name)}
+              >
+                <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-academic-soft text-academic">
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="font-medium">{r.name}</div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {data.branch_name}
+                        </span>
+                        <span>
+                          <UsersIcon className="mr-0.5 inline h-3 w-3" />
+                          {r.capacity_text || `Capacity ${r.capacity}`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    className="gap-1.5 sm:self-center"
+                    disabled={booking !== null || r.name !== selectedRoom}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleBook()
+                    }}
+                  >
+                    {booking === r.name ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <>Book <ArrowRight className="h-3.5 w-3.5" /></>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* anny.eu link */}
+          {data.url && (
+            <div className="text-center">
+              <a
+                href={data.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open on anny.eu
+              </a>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

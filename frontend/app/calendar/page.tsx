@@ -26,19 +26,40 @@ import { weekDays } from "@/lib/mock-data"
 import type { AgentType } from "@/lib/mock-data"
 import {
   listCalendarEvents,
+  listDeadlines,
   createCalendarEvent,
   deleteCalendarEvent,
   getCalendarStatus,
 } from "@/lib/api"
-import type { CalendarEventData } from "@/lib/api"
-import { AlertTriangle, GripVertical, Loader2, Plus, RefreshCw, Settings2 } from "lucide-react"
+import type { CalendarEventData, Deadline } from "@/lib/api"
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Settings2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
-const HOUR_START = 8
-const HOUR_END = 20
-const HOURS = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
+const DEFAULT_HOUR_START = 7
+const DEFAULT_HOUR_END = 22
+
+function computeVisibleHours(events: CalendarEventData[]): number[] {
+  let earliest = DEFAULT_HOUR_START
+  let latest = DEFAULT_HOUR_END
+  for (const e of events) {
+    earliest = Math.min(earliest, Math.floor(e.start))
+    latest = Math.max(latest, Math.ceil(e.end))
+  }
+  earliest = Math.max(0, earliest)
+  latest = Math.min(24, latest)
+  return Array.from({ length: latest - earliest + 1 }, (_, i) => earliest + i)
+}
 
 const agentBg: Record<AgentType, string> = {
   academic: "bg-academic-soft border-academic/30 text-academic",
@@ -47,10 +68,16 @@ const agentBg: Record<AgentType, string> = {
   orchestrator: "bg-primary/10 border-primary/30 text-primary",
 }
 
-function getWeekDates(weekOffset: number): string[] {
+function getWeekMonday(weekOffset: number): Date {
   const now = new Date()
   const monday = new Date(now)
   monday.setDate(now.getDate() - now.getDay() + 1 + weekOffset * 7)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
+function getWeekDates(weekOffset: number): string[] {
+  const monday = getWeekMonday(weekOffset)
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
@@ -58,11 +85,42 @@ function getWeekDates(weekOffset: number): string[] {
   })
 }
 
+function deadlinesToCalendarEvents(
+  deadlines: Deadline[],
+  weekOffset: number,
+): CalendarEventData[] {
+  const monday = getWeekMonday(weekOffset)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  sunday.setHours(23, 59, 59, 999)
+
+  return deadlines
+    .filter((d) => {
+      const due = new Date(d.due + "T00:00:00")
+      return due >= monday && due <= sunday
+    })
+    .map((d) => {
+      const due = new Date(d.due + "T00:00:00")
+      const day = (due.getDay() + 6) % 7
+      return {
+        id: `deadline-${d.id}`,
+        title: `📅 ${d.course}: ${d.task}`,
+        day,
+        start: 8,
+        end: 8.5,
+        agent: "academic" as const,
+        location: `Due ${d.due} · ${d.weight}`,
+        conflict: false,
+        google_event_id: null,
+      }
+    })
+}
+
 export default function CalendarPage() {
   const [events, setEvents] = React.useState<CalendarEventData[]>([])
   const [loading, setLoading] = React.useState(true)
   const [connected, setConnected] = React.useState<boolean | null>(null)
-  const [weekOffset] = React.useState(0)
+  const [weekOffset, setWeekOffset] = React.useState(0)
 
   const [conflictOpen, setConflictOpen] = React.useState<CalendarEventData | null>(null)
   const [detailOpen, setDetailOpen] = React.useState<CalendarEventData | null>(null)
@@ -70,12 +128,18 @@ export default function CalendarPage() {
   const [priorities, setPriorities] = React.useState(["Exam prep", "Academic lectures", "Career", "Sports", "Social"])
 
   const weekDates = React.useMemo(() => getWeekDates(weekOffset), [weekOffset])
+  const hours = React.useMemo(() => computeVisibleHours(events), [events])
+  const hourStart = hours[0] ?? DEFAULT_HOUR_START
 
   const fetchEvents = React.useCallback(async () => {
     setLoading(true)
     try {
-      const data = await listCalendarEvents(weekOffset)
-      setEvents(data.events)
+      const [calData, deadlines] = await Promise.all([
+        listCalendarEvents(weekOffset),
+        listDeadlines(),
+      ])
+      const deadlineEvents = deadlinesToCalendarEvents(deadlines, weekOffset)
+      setEvents([...calData.events, ...deadlineEvents])
     } catch {
       setEvents([])
     } finally {
@@ -205,13 +269,41 @@ export default function CalendarPage() {
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <LegendItem agent="academic" label="Academic" />
-        <LegendItem agent="career" label="Career" />
-        <LegendItem agent="social" label="Social" />
-        <div className="flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-          <span>Conflict</span>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <LegendItem agent="academic" label="Academic" />
+          <LegendItem agent="career" label="Career" />
+          <LegendItem agent="social" label="Social" />
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+            <span>Conflict</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setWeekOffset((w) => w - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={weekOffset === 0 ? "default" : "outline"}
+            size="sm"
+            className="h-8 px-3 text-xs"
+            onClick={() => setWeekOffset(0)}
+          >
+            Today
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setWeekOffset((w) => w + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
@@ -243,8 +335,11 @@ export default function CalendarPage() {
             <div className="relative grid grid-cols-[60px_repeat(7,1fr)]">
               {/* Hour labels */}
               <div className="border-r border-border">
-                {HOURS.map((h) => (
-                  <div key={h} className="h-14 border-b border-border px-2 pt-1 text-[10px] text-muted-foreground last:border-b-0">
+                {hours.map((h) => (
+                  <div
+                    key={h}
+                    className="h-14 border-b border-border px-2 pt-1 text-[10px] text-muted-foreground last:border-b-0"
+                  >
                     {String(h).padStart(2, "0")}:00
                   </div>
                 ))}
@@ -252,33 +347,51 @@ export default function CalendarPage() {
 
               {/* Day columns */}
               {weekDays.map((_, dayIdx) => (
-                <div key={dayIdx} className="relative border-r border-border last:border-r-0">
-                  {HOURS.map((h) => (
-                    <div key={h} className="h-14 border-b border-border last:border-b-0" />
+                <div
+                  key={dayIdx}
+                  className="relative border-r border-border last:border-r-0"
+                >
+                  {hours.map((h) => (
+                    <div
+                      key={h}
+                      className="h-14 border-b border-border last:border-b-0"
+                    />
                   ))}
 
                   {events
                     .filter((e) => e.day === dayIdx)
                     .map((e) => {
-                      const top = (e.start - HOUR_START) * 56
+                      const top = (e.start - hourStart) * 56
                       const height = Math.max(28, (e.end - e.start) * 56 - 4)
                       const agent = e.agent as AgentType | null
                       return (
                         <button
                           key={e.id}
-                          onClick={() => e.conflict ? setConflictOpen(e) : setDetailOpen(e)}
+                          onClick={() =>
+                            e.conflict
+                              ? setConflictOpen(e)
+                              : setDetailOpen(e)
+                          }
                           className={cn(
                             "absolute left-1 right-1 overflow-hidden rounded-lg border p-1.5 text-left text-xs shadow-sm transition-shadow hover:shadow-md",
-                            agent ? agentBg[agent] : "bg-muted border-border text-foreground",
+                            agent
+                              ? agentBg[agent]
+                              : "bg-muted border-border text-foreground",
                             e.conflict && "ring-2 ring-destructive",
                           )}
                           style={{ top, height }}
                         >
                           <div className="flex items-center gap-1">
-                            {e.conflict ? <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" /> : null}
-                            <span className="truncate font-medium leading-tight">{e.title}</span>
+                            {e.conflict ? (
+                              <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" />
+                            ) : null}
+                            <span className="truncate font-medium leading-tight">
+                              {e.title}
+                            </span>
                           </div>
-                          <div className="mt-0.5 truncate text-[10px] opacity-75">{e.location}</div>
+                          <div className="mt-0.5 truncate text-[10px] opacity-75">
+                            {e.location}
+                          </div>
                         </button>
                       )
                     })}

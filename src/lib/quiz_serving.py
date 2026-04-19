@@ -284,25 +284,18 @@ async def serve_quiz(
         requested_concepts=len(core_concepts),
     )
 
-    # If no concepts specified, auto-pick weakest
+    # If no concepts specified, load ALL available concepts for max diversity
     if not core_concepts:
         available = await _list_available_concepts(course_id, "quizzes")
-        max_concepts = max(1, num_questions // 3)
-        core_concepts_safe = await _pick_weakest_concepts(
-            session,
-            student_id,
-            course_id,
-            available,
-            max_concepts,
-        )
+        random.shuffle(available)
+        core_concepts_safe = available
     else:
-        # Convert provided concepts to safe filenames
         core_concepts_safe = [_safe_filename(c) for c in core_concepts]
 
     if not core_concepts_safe:
         raise QuizNotFoundError(f"No quiz content available for course {course_id}")
 
-    # Load quiz files from S3
+    # Load quiz files from S3 — gather from ALL concepts for diversity
     all_questions: list[tuple[str, QuizFile, QuizQuestion]] = []
     for safe_concept in core_concepts_safe:
         quiz_file = await _load_quiz_file(course_id, safe_concept)
@@ -401,19 +394,12 @@ async def serve_flashcards(
         requested_concepts=len(core_concepts),
     )
 
-    # If no concepts specified, auto-pick weakest
+    # If no concepts specified, load ALL for max diversity
     if not core_concepts:
         available = await _list_available_concepts(course_id, "flashcards")
-        max_concepts = max(1, num_cards // 5)
-        core_concepts_safe = await _pick_weakest_concepts(
-            session,
-            student_id,
-            course_id,
-            available,
-            max_concepts,
-        )
+        random.shuffle(available)
+        core_concepts_safe = available
     else:
-        # Convert provided concepts to safe filenames
         core_concepts_safe = [_safe_filename(c) for c in core_concepts]
 
     if not core_concepts_safe:
